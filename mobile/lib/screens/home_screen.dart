@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'workout_screen.dart';
-import '../models/quest.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
