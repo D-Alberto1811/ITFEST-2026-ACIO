@@ -8,6 +8,7 @@ class ExerciseCounter {
   final int target;
   int repCount = 0;
   String _stage = 'up'; // up | down
+  int _framesSinceRep = 0; // anti double-count
 
   ExerciseCounter({required this.type, required this.target});
 
@@ -46,17 +47,27 @@ class ExerciseCounter {
 
     if (leftVis < 1.5 && rightVis < 1.5) return;
 
-    final shoulder = leftVis > rightVis ? leftShoulder! : rightShoulder!;
-    final elbow = leftVis > rightVis ? leftElbow! : rightElbow!;
-    final wrist = leftVis > rightVis ? leftWrist! : rightWrist!;
+    _framesSinceRep++;
 
-    final angle = _angle(shoulder, elbow, wrist);
+    // Folosește ambele brațe când sunt vizibile pentru mai multă acuratețe
+    double? leftAngle, rightAngle;
+    if (leftVis >= 1.5 && leftShoulder != null && leftElbow != null && leftWrist != null) {
+      leftAngle = _angle(leftShoulder, leftElbow, leftWrist);
+    }
+    if (rightVis >= 1.5 && rightShoulder != null && rightElbow != null && rightWrist != null) {
+      rightAngle = _angle(rightShoulder, rightElbow, rightWrist);
+    }
+    final angle = (leftAngle != null && rightAngle != null)
+        ? (leftAngle + rightAngle) / 2
+        : (leftAngle ?? rightAngle);
+    if (angle == null) return;
 
-    if (angle > 160) _stage = 'up';
-    if (angle < 90 && _stage == 'up') _stage = 'down';
-    if (_stage == 'down' && angle > 150) {
+    if (angle > 165) _stage = 'up';
+    if (angle < 95 && _stage == 'up') _stage = 'down';
+    if (_stage == 'down' && angle > 140 && _framesSinceRep > 5) {
       repCount++;
       _stage = 'up';
+      _framesSinceRep = 0;
     }
   }
 
@@ -73,17 +84,27 @@ class ExerciseCounter {
 
     if (leftVis < 1.5 && rightVis < 1.5) return;
 
-    final hip = leftVis > rightVis ? leftHip! : rightHip!;
-    final knee = leftVis > rightVis ? leftKnee! : rightKnee!;
-    final ankle = leftVis > rightVis ? leftAnkle! : rightAnkle!;
+    _framesSinceRep++;
 
-    final angle = _angle(hip, knee, ankle);
+    // Folosește ambele picioare când sunt vizibile
+    double? leftAngle, rightAngle;
+    if (leftVis >= 1.5 && leftHip != null && leftKnee != null && leftAnkle != null) {
+      leftAngle = _angle(leftHip, leftKnee, leftAnkle);
+    }
+    if (rightVis >= 1.5 && rightHip != null && rightKnee != null && rightAnkle != null) {
+      rightAngle = _angle(rightHip, rightKnee, rightAnkle);
+    }
+    final angle = (leftAngle != null && rightAngle != null)
+        ? (leftAngle + rightAngle) / 2
+        : (leftAngle ?? rightAngle);
+    if (angle == null) return;
 
-    if (angle > 160) _stage = 'up';
-    if (angle < 100 && _stage == 'up') _stage = 'down';
-    if (_stage == 'down' && angle > 150) {
+    if (angle > 165) _stage = 'up';
+    if (angle < 105 && _stage == 'up') _stage = 'down';
+    if (_stage == 'down' && angle > 145 && _framesSinceRep > 5) {
       repCount++;
       _stage = 'up';
+      _framesSinceRep = 0;
     }
   }
 
@@ -96,14 +117,17 @@ class ExerciseCounter {
     if (leftShoulder == null || rightShoulder == null || leftWrist == null || rightWrist == null) return;
     if ((leftShoulder.likelihood ?? 0) < 0.5 || (rightWrist.likelihood ?? 0) < 0.5) return;
 
+    _framesSinceRep++;
+
     final avgWristY = (leftWrist.y + rightWrist.y) / 2;
     final avgShoulderY = (leftShoulder.y + rightShoulder.y) / 2;
     final armsUp = avgWristY < avgShoulderY - 0.05;
 
     if (armsUp) _stage = 'up';
-    if (!armsUp && _stage == 'up') {
+    if (!armsUp && _stage == 'up' && _framesSinceRep > 5) {
       repCount++;
       _stage = 'down';
+      _framesSinceRep = 0;
     }
     if (!armsUp) _stage = 'down';
   }
