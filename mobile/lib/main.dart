@@ -1,37 +1,64 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'screens/home_screen.dart';
+import 'screens/login_screen.dart';
+import 'services/database_service.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-  ]);
 
-  runZonedGuarded(
-    () => runApp(const FitLingoApp()),
-    (error, stack) => debugPrint('Error: $error\n$stack'),
+  await DatabaseService.instance.initialize();
+
+  final prefs = await SharedPreferences.getInstance();
+  final isLoggedIn = prefs.getBool('is_logged_in') ?? false;
+  final loggedInUserId = prefs.getInt('logged_in_user_id');
+
+  runApp(
+    FitLingoApp(
+      isLoggedIn: isLoggedIn && loggedInUserId != null,
+    ),
   );
 }
 
 class FitLingoApp extends StatelessWidget {
-  const FitLingoApp({super.key});
+  final bool isLoggedIn;
+
+  const FitLingoApp({
+    super.key,
+    required this.isLoggedIn,
+  });
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'FitLingo',
+      title: 'FITLINGO',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF06B6D4),
-          brightness: Brightness.dark,
-          primary: const Color(0xFF06B6D4),
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
+        primaryColor: const Color(0xFF06B6D4),
+        colorScheme: const ColorScheme.dark(
+          primary: Color(0xFF06B6D4),
+          secondary: Color(0xFFFACC15),
+          surface: Color(0xFF1E293B),
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          foregroundColor: Colors.white,
+        ),
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: const Color(0xFF1E293B),
+          contentTextStyle: const TextStyle(color: Colors.white),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          behavior: SnackBarBehavior.floating,
         ),
         useMaterial3: true,
       ),
-      home: const HomeScreen(),
+      home: isLoggedIn ? const HomeScreen() : const LoginScreen(),
     );
   }
 }
