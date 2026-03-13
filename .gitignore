@@ -40,3 +40,4 @@ ios/.symlinks/
 # OS
 .DS_Store
 Thumbs.db
+/.vs
