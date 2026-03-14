@@ -53,17 +53,27 @@ class DatabaseService {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-  if (oldVersion < 2) {
-    await _createPlayerProgressTable(db);
-    await _createQuestProgressTable(db);
+    if (oldVersion < 2) {
+      await _createPlayerProgressTable(db);
+      await _createQuestProgressTable(db);
     }
 
-  if (oldVersion < 3) {
-    await db.execute('''
-      ALTER TABLE $playerProgressTable
-      ADD COLUMN total_xp INTEGER NOT NULL DEFAULT 0
-    ''');
+    if (oldVersion < 3) {
+      final hasTotalXp = await _columnExists(db, playerProgressTable, 'total_xp');
+      if (!hasTotalXp) {
+        await db.execute('''
+          ALTER TABLE $playerProgressTable
+          ADD COLUMN total_xp INTEGER NOT NULL DEFAULT 0
+        ''');
+      }
     }
+  }
+
+  Future<bool> _columnExists(Database db, String table, String column) async {
+    final result = await db.rawQuery(
+      'PRAGMA table_info($table)',
+    );
+    return result.any((row) => (row['name'] as String?) == column);
   }
 
   Future<void> _createUsersTable(Database db) async {
