@@ -16,6 +16,7 @@ import 'login_screen.dart';
 import 'path_screen.dart';
 import 'profile_screen.dart';
 import 'workout_screen.dart';
+import 'worldwide_rankings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -75,6 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           }
         }
+
         final progress =
             await LocalStorageService.instance.getOrCreateProgress(user.id!);
         final questIds =
@@ -122,6 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (isServer) return;
     final user = _currentUser;
     if (user == null || user.id == null) return;
+
     final progress = PlayerProgress(
       userId: user.id!,
       level: level,
@@ -132,6 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
       streakDays: streakDays,
       updatedAt: DateTime.now().toIso8601String(),
     );
+
     await LocalStorageService.instance.saveProgress(progress);
   }
 
@@ -188,6 +192,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openProfile() {
     final user = _currentUser;
     if (user == null) return;
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -206,6 +211,25 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => WorkoutScreen(
           quest: quest,
           onComplete: () => _onQuestComplete(quest),
+        ),
+      ),
+    );
+  }
+
+  void _openWorldwideRankings() {
+    final user = _currentUser;
+    if (user == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WorldwideRankingsScreen(
+          user: user,
+          currentUserExerciseTotals: const {
+            RankingCategory.pushUps: 2140,
+            RankingCategory.squats: 4910,
+            RankingCategory.jumpingJacks: 1650,
+          },
         ),
       ),
     );
@@ -242,6 +266,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     streakDays: streakDays,
                     gems: gems,
                     onProfileTap: _openProfile,
+                  ),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: ElevatedButton(
+                      onPressed: _openWorldwideRankings,
+                      child: const Text('Worldwide Rankings'),
+                    ),
                   ),
                   const SizedBox(height: 20),
                   if (_selectedTabIndex == 0) ...[
