@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../models/app_user.dart';
+import '../models/player_progress.dart';
 import '../models/quest.dart';
 import '../services/auth_service.dart';
+import '../services/local_storage_service.dart';
 import 'login_screen.dart';
+import 'profile_screen.dart';
 import 'workout_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -22,6 +25,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int xpForNext = 100;
   int gems = 0;
   int streakDays = 0;
+
+  Set<int> completedQuestIds = <int>{};
 
   final List<Quest> quests = [
     Quest(
@@ -69,22 +74,40 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadCurrentUser();
+    _loadCurrentUserAndProgress();
   }
 
-  Future<void> _loadCurrentUser() async {
+  Future<void> _loadCurrentUserAndProgress() async {
     try {
       final user = await AuthService.instance.getCurrentUser();
 
-      if (!mounted) return;
+      if (user != null) {
+        final progress =
+            await LocalStorageService.instance.getOrCreateProgress(user.id!);
+        final questIds =
+            await LocalStorageService.instance.getCompletedQuestIds(user.id!);
 
+        if (!mounted) return;
+
+        setState(() {
+          _currentUser = user;
+          level = progress.level;
+          xp = progress.xp;
+          xpForNext = progress.xpForNext;
+          gems = progress.gems;
+          streakDays = progress.streakDays;
+          completedQuestIds = questIds;
+          _isLoadingUser = false;
+        });
+        return;
+      }
+
+      if (!mounted) return;
       setState(() {
-        _currentUser = user;
         _isLoadingUser = false;
       });
     } catch (_) {
       if (!mounted) return;
-
       setState(() {
         _isLoadingUser = false;
       });
@@ -102,10 +125,30 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _onQuestComplete(int rewardXp, int rewardGems) {
+  Future<void> _saveProgress() async {
+    final user = _currentUser;
+    if (user == null || user.id == null) return;
+
+    final progress = PlayerProgress(
+      userId: user.id!,
+      level: level,
+      xp: xp,
+      xpForNext: xpForNext,
+      gems: gems,
+      streakDays: streakDays,
+      updatedAt: DateTime.now().toIso8601String(),
+    );
+
+    await LocalStorageService.instance.saveProgress(progress);
+  }
+
+  Future<void> _onQuestComplete(Quest quest) async {
+    if (_currentUser == null || _currentUser!.id == null) return;
+    if (completedQuestIds.contains(quest.id)) return;
+
     setState(() {
-      xp += rewardXp;
-      gems += rewardGems;
+      xp += quest.rewardXp;
+      gems += quest.rewardGems;
 
       while (xp >= xpForNext) {
         xp -= xpForNext;
@@ -114,154 +157,29 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       streakDays += 1;
+      completedQuestIds.add(quest.id);
     });
+
+    await LocalStorageService.instance.markQuestCompleted(
+      _currentUser!.id!,
+      quest.id,
+    );
+
+    await _saveProgress();
   }
 
-  void _showAccountSheet() {
-    final name = _currentUser?.name.trim().isNotEmpty == true
-        ? _currentUser!.name.trim()
-        : 'Athlete';
+  void _openProfile() {
+    final user = _currentUser;
+    if (user == null) return;
 
-    final email = _currentUser?.email ?? 'No email available';
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF111827),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProfileScreen(
+          user: user,
+          allQuests: quests,
+        ),
       ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF334155),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Container(
-                  width: 76,
-                  height: 76,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [
-                        Color(0xFF22C55E),
-                        Color(0xFF06B6D4),
-                      ],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF06B6D4).withOpacity(0.20),
-                        blurRadius: 24,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(
-                      name.isNotEmpty ? name[0].toUpperCase() : 'A',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  email,
-                  style: const TextStyle(
-                    color: Color(0xFF94A3B8),
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildAccountStatCard(
-                        icon: Icons.local_fire_department_rounded,
-                        label: 'Streak',
-                        value: '$streakDays',
-                        color: const Color(0xFFF97316),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildAccountStatCard(
-                        icon: Icons.diamond_rounded,
-                        label: 'Currency',
-                        value: '$gems',
-                        color: const Color(0xFFA855F7),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildAccountStatCard(
-                        icon: Icons.workspace_premium_rounded,
-                        label: 'Level',
-                        value: '$level',
-                        color: const Color(0xFF22C55E),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildAccountStatCard(
-                        icon: Icons.bolt_rounded,
-                        label: 'XP',
-                        value: '$xp / $xpForNext',
-                        color: const Color(0xFF06B6D4),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _logout();
-                    },
-                    icon: const Icon(Icons.logout_rounded),
-                    label: const Text('Logout'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: Color(0xFF334155)),
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 
@@ -269,7 +187,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     if (_isLoadingUser) {
       return const Scaffold(
-        backgroundColor: Color(0xFF07111F),
+        backgroundColor: Color(0xFF0F172A),
         body: Center(
           child: CircularProgressIndicator(
             color: Color(0xFF06B6D4),
@@ -283,70 +201,79 @@ class _HomeScreenState extends State<HomeScreen> {
         : 'Athlete';
 
     return Scaffold(
-      backgroundColor: const Color(0xFF07111F),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF0B1220),
-              Color(0xFF07111F),
-              Color(0xFF050B16),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: CustomScrollView(
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildTopBar(),
-                      const SizedBox(height: 22),
-                      _buildWelcomeCard(displayName),
-                      const SizedBox(height: 22),
-                      _buildSectionHeader(),
-                    ],
+      backgroundColor: const Color(0xFF0F172A),
+      body: SafeArea(
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildTopBar(),
+                    const SizedBox(height: 20),
+                    _buildHeroCard(displayName),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Daily Quests',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Complete your daily fitness missions',
+                      style: TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverList.builder(
+                itemCount: quests.length,
+                itemBuilder: (context, index) {
+                  final quest = quests[index];
+                  final isCompleted = completedQuestIds.contains(quest.id);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _buildQuestCard(
+                      quest,
+                      isCompleted: isCompleted,
+                    ),
+                  );
+                },
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+                child: OutlinedButton.icon(
+                  onPressed: _logout,
+                  icon: const Icon(Icons.logout),
+                  label: const Text('Logout'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white70,
+                    side: const BorderSide(color: Color(0xFF334155)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                 ),
               ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-                sliver: SliverList.builder(
-                  itemCount: quests.length,
-                  itemBuilder: (context, index) {
-                    final quest = quests[index];
-
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: _QuestCard(
-                        quest: quest,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => WorkoutScreen(
-                                quest: quest,
-                                onComplete: () => _onQuestComplete(
-                                  quest.rewardXp,
-                                  quest.rewardGems,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -356,13 +283,13 @@ class _HomeScreenState extends State<HomeScreen> {
     return Row(
       children: [
         Container(
+          width: 92,
           height: 52,
-          width: 140,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: const Color(0xFF0F172A).withOpacity(0.85),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFF1E293B)),
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF334155)),
           ),
           child: Image.asset(
             'assets/images/logo.png',
@@ -370,34 +297,27 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         const Spacer(),
-        _buildPillChip(
+        _buildTopChip(
           icon: Icons.local_fire_department_rounded,
           value: streakDays.toString(),
           iconColor: const Color(0xFFF97316),
         ),
-        const SizedBox(width: 10),
-        _buildPillChip(
+        const SizedBox(width: 8),
+        _buildTopChip(
           icon: Icons.diamond_rounded,
           value: gems.toString(),
-          iconColor: const Color(0xFFA855F7),
+          iconColor: const Color(0xFFA78BFA),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 8),
         GestureDetector(
-          onTap: _showAccountSheet,
+          onTap: _openProfile,
           child: Container(
-            width: 48,
-            height: 48,
+            width: 46,
+            height: 46,
             decoration: BoxDecoration(
-              color: const Color(0xFF0F172A).withOpacity(0.9),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFF1E293B)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.18),
-                  blurRadius: 14,
-                  offset: const Offset(0, 8),
-                ),
-              ],
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFF334155)),
             ),
             child: const Icon(
               Icons.person_rounded,
@@ -410,52 +330,25 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildWelcomeCard(String displayName) {
+  Widget _buildHeroCard(String displayName) {
     final progress = xpForNext == 0 ? 0.0 : (xp / xpForNext).clamp(0.0, 1.0);
 
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF132238),
-            Color(0xFF0B1728),
-          ],
-        ),
-        border: Border.all(
-          color: const Color(0xFF1E293B),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF020617).withOpacity(0.45),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
-          ),
-        ],
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFF334155)),
       ),
       child: Row(
         children: [
           Container(
-            width: 78,
-            height: 78,
+            width: 76,
+            height: 76,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              gradient: const LinearGradient(
-                colors: [
-                  Color(0xFF22C55E),
-                  Color(0xFF06B6D4),
-                ],
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF06B6D4).withOpacity(0.20),
-                  blurRadius: 22,
-                  offset: const Offset(0, 10),
-                ),
-              ],
+              color: const Color(0xFF422006),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: const Color(0xFFD97706)),
             ),
             child: const Center(
               child: Icon(
@@ -471,35 +364,28 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Welcome back, $displayName',
+                  'Welcome, $displayName',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 21,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w900,
                     height: 1.1,
                   ),
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Stay consistent and crush today’s training quests.',
+                  'Ready for today’s workout quests?',
                   style: TextStyle(
                     color: Color(0xFF94A3B8),
                     fontSize: 13,
-                    height: 1.4,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 Row(
                   children: [
-                    _buildMiniStat(
-                      label: 'Level',
-                      value: '$level',
-                    ),
+                    _buildMiniStat('Level', '$level'),
                     const SizedBox(width: 10),
-                    _buildMiniStat(
-                      label: 'XP',
-                      value: '$xp/$xpForNext',
-                    ),
+                    _buildMiniStat('XP', '$xp / $xpForNext'),
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -510,7 +396,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     minHeight: 10,
                     backgroundColor: const Color(0xFF0F172A),
                     valueColor: const AlwaysStoppedAnimation<Color>(
-                      Color(0xFF22C55E),
+                      Color(0xFF06B6D4),
                     ),
                   ),
                 ),
@@ -522,31 +408,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSectionHeader() {
-    return Row(
-      children: const [
-        Text(
-          'Today’s Quests',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        Spacer(),
-        Text(
-          'Daily goals',
-          style: TextStyle(
-            color: Color(0xFF64748B),
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPillChip({
+  Widget _buildTopChip({
     required IconData icon,
     required String value,
     required Color iconColor,
@@ -555,13 +417,13 @@ class _HomeScreenState extends State<HomeScreen> {
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F172A).withOpacity(0.9),
+        color: const Color(0xFF1E293B),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF1E293B)),
+        border: Border.all(color: const Color(0xFF334155)),
       ),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: iconColor),
+          Icon(icon, size: 17, color: iconColor),
           const SizedBox(width: 6),
           Text(
             value,
@@ -576,16 +438,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildMiniStat({
-    required String label,
-    required String value,
-  }) {
+  Widget _buildMiniStat(String label, String value) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F172A).withOpacity(0.75),
+        color: const Color(0xFF0F172A),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF1E293B)),
+        border: Border.all(color: const Color(0xFF334155)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -593,7 +452,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Text(
             label,
             style: const TextStyle(
-              color: Color(0xFF64748B),
+              color: Color(0xFF94A3B8),
               fontSize: 11,
               fontWeight: FontWeight.w600,
             ),
@@ -612,91 +471,33 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildAccountStatCard({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFF1E293B)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(height: 12),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF94A3B8),
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _QuestCard extends StatelessWidget {
-  final Quest quest;
-  final VoidCallback onTap;
-
-  const _QuestCard({
-    required this.quest,
-    required this.onTap,
-  });
-
-  Color _accentColor() {
-    switch (quest.type) {
-      case 'pushup':
-        return const Color(0xFF22C55E);
-      case 'squat':
-        return const Color(0xFFF97316);
-      case 'jumping_jack':
-        return const Color(0xFF06B6D4);
-      default:
-        return const Color(0xFF22C55E);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = _accentColor();
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(24),
-        child: Ink(
+  Widget _buildQuestCard(Quest quest, {required bool isCompleted}) {
+    return GestureDetector(
+      onTap: isCompleted
+          ? null
+          : () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => WorkoutScreen(
+                    quest: quest,
+                    onComplete: () => _onQuestComplete(quest),
+                  ),
+                ),
+              );
+            },
+      child: Opacity(
+        opacity: isCompleted ? 0.70 : 1,
+        child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFF0F172A).withOpacity(0.94),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: const Color(0xFF1E293B)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.18),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isCompleted
+                  ? const Color(0xFF22C55E)
+                  : const Color(0xFF334155),
+            ),
           ),
           child: Row(
             children: [
@@ -704,9 +505,9 @@ class _QuestCard extends StatelessWidget {
                 width: 58,
                 height: 58,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  color: accent.withOpacity(0.12),
-                  border: Border.all(color: accent.withOpacity(0.25)),
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF334155)),
                 ),
                 child: Center(
                   child: Text(
@@ -723,53 +524,48 @@ class _QuestCard extends StatelessWidget {
                     Text(
                       quest.title,
                       style: const TextStyle(
-                        color: Colors.white,
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
+                        color: Colors.white,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      quest.desc,
-                      style: const TextStyle(
-                        color: Color(0xFF94A3B8),
-                        fontSize: 13,
-                        height: 1.3,
+                      isCompleted ? 'Completed' : quest.desc,
+                      style: TextStyle(
+                        color: isCompleted
+                            ? const Color(0xFF22C55E)
+                            : const Color(0xFF94A3B8),
+                        fontSize: 12,
                       ),
                     ),
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        _RewardTag(
+                        _buildRewardTag(
                           icon: Icons.bolt_rounded,
                           text: '+${quest.rewardXp} XP',
                           color: const Color(0xFF06B6D4),
                         ),
                         const SizedBox(width: 8),
                         if (quest.rewardGems > 0)
-                          _RewardTag(
+                          _buildRewardTag(
                             icon: Icons.diamond_rounded,
                             text: '+${quest.rewardGems}',
-                            color: const Color(0xFFA855F7),
+                            color: const Color(0xFFA78BFA),
                           ),
                       ],
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: accent.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  Icons.arrow_forward_rounded,
-                  color: accent,
-                  size: 20,
-                ),
+              const SizedBox(width: 8),
+              Icon(
+                isCompleted ? Icons.check_circle : Icons.arrow_forward_ios,
+                color: isCompleted
+                    ? const Color(0xFF22C55E)
+                    : const Color(0xFF64748B),
+                size: 18,
               ),
             ],
           ),
@@ -777,27 +573,18 @@ class _QuestCard extends StatelessWidget {
       ),
     );
   }
-}
 
-class _RewardTag extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  final Color color;
-
-  const _RewardTag({
-    required this.icon,
-    required this.text,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildRewardTag({
+    required IconData icon,
+    required String text,
+    required Color color,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
+        color: const Color(0xFF0F172A),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.20)),
+        border: Border.all(color: const Color(0xFF334155)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
