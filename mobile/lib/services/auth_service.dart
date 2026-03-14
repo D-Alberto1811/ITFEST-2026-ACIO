@@ -4,10 +4,11 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_config.dart';
+import '../config/storage_config.dart';
 import '../models/app_user.dart';
 import 'api_client.dart';
+import 'local_storage_service.dart';
 
-/// Serviciu de autentificare – comunică exclusiv cu backend-ul.
 class AuthService {
   AuthService._();
 
@@ -18,33 +19,64 @@ class AuthService {
     scopes: <String>['email'],
   );
 
+  Future<void> initialize() async {
+    if (isSqliteMode) {
+      await LocalStorageService.instance.initialize();
+    }
+  }
+
   Future<AppUser> register({
     required String name,
     required String email,
     required String password,
   }) async {
-    final res = await ApiClient.register(
-      name: name.trim(),
-      email: email.trim(),
+    if (isServerMode) {
+      final res = await ApiClient.register(
+        name: name.trim(),
+        email: email.trim(),
+        password: password,
+      );
+      await _saveServerSession(res);
+      return res.user;
+    }
+
+    final user = await LocalStorageService.instance.register(
+      name: name,
+      email: email,
       password: password,
     );
-    await _saveSession(res);
-    return res.user;
+    await _saveLocalSession(user);
+    return user;
   }
 
   Future<AppUser> login({
     required String email,
     required String password,
   }) async {
-    final res = await ApiClient.login(
-      email: email.trim(),
+    if (isServerMode) {
+      final res = await ApiClient.login(
+        email: email.trim(),
+        password: password,
+      );
+      await _saveServerSession(res);
+      return res.user;
+    }
+
+    final user = await LocalStorageService.instance.login(
+      email: email,
       password: password,
     );
-    await _saveSession(res);
-    return res.user;
+    await _saveLocalSession(user);
+    return user;
   }
 
   Future<AppUser> signInWithGoogle() async {
+    if (isSqliteMode) {
+      throw Exception(
+        'Google sign-in is available only in server mode right now.',
+      );
+    }
+
     try {
       if (googleServerClientId == null || googleServerClientId!.isEmpty) {
         throw Exception(
@@ -52,8 +84,8 @@ class AuthService {
           'Creează Web OAuth client în Google Cloud Console și adaugă-l acolo.',
         );
       }
-      await _googleSignIn.signOut();
 
+      await _googleSignIn.signOut();
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
 
       if (googleUser == null) {
@@ -62,6 +94,7 @@ class AuthService {
 
       final auth = await googleUser.authentication;
       final idToken = auth.idToken;
+
       if (idToken == null || idToken.isEmpty) {
         throw Exception(
           'Google sign-in: id_token not available. Add serverClientId (Web OAuth client) in api_config.dart.',
@@ -69,7 +102,7 @@ class AuthService {
       }
 
       final res = await ApiClient.googleAuth(idToken);
-      await _saveSession(res);
+      await _saveServerSession(res);
       return res.user;
     } catch (e) {
       throw Exception('Google sign-in failed: $e');
@@ -78,22 +111,36 @@ class AuthService {
 
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
+
     await prefs.remove('is_logged_in');
     await prefs.remove('logged_in_user_id');
     await prefs.remove('auth_token');
     await prefs.remove('cached_user');
+    await prefs.remove('session_mode');
 
     try {
       await _googleSignIn.signOut();
     } catch (_) {}
   }
 
-  Future<void> _saveSession(AuthResponse res) async {
+  Future<void> _saveServerSession(AuthResponse res) async {
     final prefs = await SharedPreferences.getInstance();
+
     await prefs.setBool('is_logged_in', true);
     await prefs.setInt('logged_in_user_id', res.user.id!);
     await prefs.setString('auth_token', res.accessToken);
     await prefs.setString('cached_user', jsonEncode(res.user.toMap()));
+    await prefs.setString('session_mode', 'server');
+  }
+
+  Future<void> _saveLocalSession(AppUser user) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setBool('is_logged_in', true);
+    await prefs.setInt('logged_in_user_id', user.id!);
+    await prefs.remove('auth_token');
+    await prefs.setString('cached_user', jsonEncode(user.toMap()));
+    await prefs.setString('session_mode', 'sqlite');
   }
 
   Future<int?> getLoggedInUserId() async {
@@ -104,6 +151,36 @@ class AuthService {
 
   Future<AppUser?> getCurrentUser() async {
     final prefs = await SharedPreferences.getInstance();
+    final isLoggedIn = prefs.getBool('is_logged_in') == true;
+
+    if (!isLoggedIn) {
+      return null;
+    }
+
+    final sessionMode = prefs.getString('session_mode');
+    final loggedInUserId = prefs.getInt('logged_in_user_id');
+
+    if (isSqliteMode) {
+      if (sessionMode != 'sqlite' || loggedInUserId == null) {
+        return null;
+      }
+
+      final cached = prefs.getString('cached_user');
+      if (cached != null) {
+        try {
+          return AppUser.fromMap(
+            Map<String, dynamic>.from(jsonDecode(cached) as Map),
+          );
+        } catch (_) {}
+      }
+
+      return LocalStorageService.instance.getUserById(loggedInUserId);
+    }
+
+    if (sessionMode != 'server') {
+      return null;
+    }
+
     final token = prefs.getString('auth_token');
     if (token == null || token.isEmpty) return null;
 
