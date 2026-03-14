@@ -15,6 +15,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
@@ -41,4 +42,9 @@ android {
 
 flutter {
     source = "../.."
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.compilerArgs.add("-Xlint:-unchecked")
+    options.compilerArgs.add("-Xlint:-deprecation")
 }

@@ -1,94 +1,57 @@
 import 'dart:convert';
 
-import 'package:crypto/crypto.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/api_config.dart';
 import '../models/app_user.dart';
-import 'database_service.dart';
+import 'api_client.dart';
 
+/// Serviciu de autentificare – comunică exclusiv cu backend-ul.
 class AuthService {
   AuthService._();
 
   static final AuthService instance = AuthService._();
 
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: <String>[
-      'email',
-    ],
+  late final GoogleSignIn _googleSignIn = GoogleSignIn(
+    serverClientId: googleServerClientId,
+    scopes: <String>['email'],
   );
-
-  Future<String> _hashPassword(String password) async {
-    final bytes = utf8.encode(password);
-    return sha256.convert(bytes).toString();
-  }
 
   Future<AppUser> register({
     required String name,
     required String email,
     required String password,
   }) async {
-    final normalizedEmail = email.trim().toLowerCase();
-    final normalizedName = name.trim();
-
-    final existingUser =
-        await DatabaseService.instance.getUserByEmail(normalizedEmail);
-
-    if (existingUser != null) {
-      throw Exception('An account with this email already exists.');
-    }
-
-    final passwordHash = await _hashPassword(password);
-    final now = DateTime.now().toIso8601String();
-
-    final user = AppUser(
-      name: normalizedName,
-      email: normalizedEmail,
-      passwordHash: passwordHash,
-      authProvider: 'local',
-      googleId: null,
-      createdAt: now,
+    final res = await ApiClient.register(
+      name: name.trim(),
+      email: email.trim(),
+      password: password,
     );
-
-    final userId = await DatabaseService.instance.insertUser(user);
-    final createdUser = user.copyWith(id: userId);
-
-    await _saveSession(createdUser.id!);
-
-    return createdUser;
+    await _saveSession(res);
+    return res.user;
   }
 
   Future<AppUser> login({
     required String email,
     required String password,
   }) async {
-    final normalizedEmail = email.trim().toLowerCase();
-
-    final user = await DatabaseService.instance.getUserByEmail(normalizedEmail);
-
-    if (user == null) {
-      throw Exception('No account found for this email.');
-    }
-
-    if (user.authProvider == 'google') {
-      throw Exception(
-        'This account uses Google sign-in. Please use Login with Google.',
-      );
-    }
-
-    final passwordHash = await _hashPassword(password);
-
-    if (user.passwordHash != passwordHash) {
-      throw Exception('Incorrect password.');
-    }
-
-    await _saveSession(user.id!);
-
-    return user;
+    final res = await ApiClient.login(
+      email: email.trim(),
+      password: password,
+    );
+    await _saveSession(res);
+    return res.user;
   }
 
   Future<AppUser> signInWithGoogle() async {
     try {
+      if (googleServerClientId == null || googleServerClientId!.isEmpty) {
+        throw Exception(
+          'googleServerClientId lipsește în api_config.dart. '
+          'Creează Web OAuth client în Google Cloud Console și adaugă-l acolo.',
+        );
+      }
       await _googleSignIn.signOut();
 
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
@@ -97,50 +60,17 @@ class AuthService {
         throw Exception('Google sign-in was cancelled.');
       }
 
-      final existingByGoogleId =
-          await DatabaseService.instance.getUserByGoogleId(googleUser.id);
-
-      if (existingByGoogleId != null) {
-        await _saveSession(existingByGoogleId.id!);
-        return existingByGoogleId;
-      }
-
-      final normalizedEmail = googleUser.email.trim().toLowerCase();
-      final existingByEmail =
-          await DatabaseService.instance.getUserByEmail(normalizedEmail);
-
-      if (existingByEmail != null) {
-        final updatedUser = existingByEmail.copyWith(
-          authProvider: 'google',
-          googleId: googleUser.id,
+      final auth = await googleUser.authentication;
+      final idToken = auth.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw Exception(
+          'Google sign-in: id_token not available. Add serverClientId (Web OAuth client) in api_config.dart.',
         );
-
-        await DatabaseService.instance.updateUser(updatedUser);
-        await _saveSession(updatedUser.id!);
-
-        return updatedUser;
       }
 
-      final now = DateTime.now().toIso8601String();
-
-      final newUser = AppUser(
-        name: (googleUser.displayName != null &&
-                googleUser.displayName!.trim().isNotEmpty)
-            ? googleUser.displayName!.trim()
-            : 'Google User',
-        email: normalizedEmail,
-        passwordHash: '',
-        authProvider: 'google',
-        googleId: googleUser.id,
-        createdAt: now,
-      );
-
-      final userId = await DatabaseService.instance.insertUser(newUser);
-      final createdUser = newUser.copyWith(id: userId);
-
-      await _saveSession(createdUser.id!);
-
-      return createdUser;
+      final res = await ApiClient.googleAuth(idToken);
+      await _saveSession(res);
+      return res.user;
     } catch (e) {
       throw Exception('Google sign-in failed: $e');
     }
@@ -148,39 +78,51 @@ class AuthService {
 
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
-
     await prefs.remove('is_logged_in');
     await prefs.remove('logged_in_user_id');
+    await prefs.remove('auth_token');
+    await prefs.remove('cached_user');
 
     try {
       await _googleSignIn.signOut();
     } catch (_) {}
   }
 
-  Future<void> _saveSession(int userId) async {
+  Future<void> _saveSession(AuthResponse res) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('is_logged_in', true);
-    await prefs.setInt('logged_in_user_id', userId);
+    await prefs.setInt('logged_in_user_id', res.user.id!);
+    await prefs.setString('auth_token', res.accessToken);
+    await prefs.setString('cached_user', jsonEncode(res.user.toMap()));
   }
 
   Future<int?> getLoggedInUserId() async {
     final prefs = await SharedPreferences.getInstance();
-    final isLoggedIn = prefs.getBool('is_logged_in') ?? false;
-
-    if (!isLoggedIn) {
-      return null;
-    }
-
+    if (prefs.getBool('is_logged_in') != true) return null;
     return prefs.getInt('logged_in_user_id');
   }
 
   Future<AppUser?> getCurrentUser() async {
-    final userId = await getLoggedInUserId();
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token');
+    if (token == null || token.isEmpty) return null;
 
-    if (userId == null) {
-      return null;
+    final cached = prefs.getString('cached_user');
+    if (cached != null) {
+      try {
+        return AppUser.fromMap(
+          Map<String, dynamic>.from(jsonDecode(cached) as Map),
+        );
+      } catch (_) {}
     }
 
-    return DatabaseService.instance.getUserById(userId);
+    final user = await ApiClient.getMe(token);
+    if (user != null) {
+      await prefs.setString('cached_user', jsonEncode(user.toMap()));
+      return user;
+    }
+
+    await logout();
+    return null;
   }
 }

@@ -1,22 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
-import 'services/database_service.dart';
+import 'services/auth_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await DatabaseService.instance.initialize();
-
-  final prefs = await SharedPreferences.getInstance();
-  final isLoggedIn = prefs.getBool('is_logged_in') ?? false;
-  final loggedInUserId = prefs.getInt('logged_in_user_id');
+  final user = await AuthService.instance.getCurrentUser();
 
   runApp(
     FitLingoApp(
-      isLoggedIn: isLoggedIn && loggedInUserId != null,
+      isLoggedIn: user != null,
     ),
   );
 }

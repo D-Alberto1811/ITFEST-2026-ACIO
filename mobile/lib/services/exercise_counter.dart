@@ -3,6 +3,9 @@ import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
 enum ExerciseType { pushup, squat, jumpingJack }
 
+/// Nota finală sesiune: A, B, C, D, E.
+enum SessionGrade { A, B, C, D, E }
+
 class ExerciseCounter {
   final ExerciseType type;
   final int target;
@@ -10,7 +13,42 @@ class ExerciseCounter {
   String _stage = 'up'; // up | down
   int _framesSinceRep = 0; // anti double-count
 
+  /// Unghi minim la "bottom" în timpul rep-ului (pentru calitate).
+  double _minAngleThisRep = 180;
+
+  /// Scoruri per repetiție (0.0 - 1.0).
+  final List<double> _repScores = [];
+
   ExerciseCounter({required this.type, required this.target});
+
+  /// Media notelor tuturor repetițiilor.
+  double get averageScore =>
+      _repScores.isEmpty ? 1.0 : _repScores.reduce((a, b) => a + b) / _repScores.length;
+
+  /// Nota finală (A-E) bazată pe calitatea formei.
+  SessionGrade get sessionGrade {
+    final avg = averageScore;
+    if (avg >= 0.9) return SessionGrade.A;
+    if (avg >= 0.75) return SessionGrade.B;
+    if (avg >= 0.6) return SessionGrade.C;
+    if (avg >= 0.45) return SessionGrade.D;
+    return SessionGrade.E;
+  }
+
+  String get gradeLabel {
+    switch (sessionGrade) {
+      case SessionGrade.A:
+        return 'A - Formă excelentă!';
+      case SessionGrade.B:
+        return 'B - Foarte bine!';
+      case SessionGrade.C:
+        return 'C - Bine, continuă!';
+      case SessionGrade.D:
+        return 'D - Mai poți îmbunătăți';
+      case SessionGrade.E:
+        return 'E - Exersează forma';
+    }
+  }
 
   void processPose(Pose pose) {
     switch (type) {
@@ -63,12 +101,28 @@ class ExerciseCounter {
     if (angle == null) return;
 
     if (angle > 165) _stage = 'up';
-    if (angle < 95 && _stage == 'up') _stage = 'down';
+    if (angle < 95 && _stage == 'up') {
+      _stage = 'down';
+      _minAngleThisRep = 180;
+    }
+    if (_stage == 'down') {
+      if (angle < _minAngleThisRep) _minAngleThisRep = angle;
+    }
     if (_stage == 'down' && angle > 140 && _framesSinceRep > 5) {
       repCount++;
+      _repScores.add(_scorePushupDepth(_minAngleThisRep));
       _stage = 'up';
       _framesSinceRep = 0;
     }
+  }
+
+  /// Scor 0-1 pentru adâncime flotări: ideal ~90°.
+  double _scorePushupDepth(double minAngle) {
+    if (minAngle <= 100) return 1.0;
+    if (minAngle <= 115) return 0.9;
+    if (minAngle <= 130) return 0.75;
+    if (minAngle <= 140) return 0.5;
+    return 0.3;
   }
 
   void _processSquat(Pose pose) {
@@ -100,12 +154,28 @@ class ExerciseCounter {
     if (angle == null) return;
 
     if (angle > 165) _stage = 'up';
-    if (angle < 105 && _stage == 'up') _stage = 'down';
+    if (angle < 105 && _stage == 'up') {
+      _stage = 'down';
+      _minAngleThisRep = 180;
+    }
+    if (_stage == 'down') {
+      if (angle < _minAngleThisRep) _minAngleThisRep = angle;
+    }
     if (_stage == 'down' && angle > 145 && _framesSinceRep > 5) {
       repCount++;
+      _repScores.add(_scoreSquatDepth(_minAngleThisRep));
       _stage = 'up';
       _framesSinceRep = 0;
     }
+  }
+
+  /// Scor 0-1 pentru adâncime genuflexiuni: ideal ~90°.
+  double _scoreSquatDepth(double minAngle) {
+    if (minAngle <= 105) return 1.0;
+    if (minAngle <= 120) return 0.9;
+    if (minAngle <= 135) return 0.75;
+    if (minAngle <= 145) return 0.5;
+    return 0.3;
   }
 
   void _processJumpingJack(Pose pose) {
@@ -126,6 +196,7 @@ class ExerciseCounter {
     if (armsUp) _stage = 'up';
     if (!armsUp && _stage == 'up' && _framesSinceRep > 5) {
       repCount++;
+      _repScores.add(0.85); // Jumping jack: detectare binară, notă default bună
       _stage = 'down';
       _framesSinceRep = 0;
     }

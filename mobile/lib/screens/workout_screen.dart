@@ -5,7 +5,7 @@ import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import '../models/quest.dart';
 import '../services/pose_service.dart';
-import '../services/exercise_counter.dart';
+import '../services/exercise_counter.dart' show ExerciseCounter, ExerciseType, SessionGrade;
 
 class WorkoutScreen extends StatefulWidget {
   final Quest quest;
@@ -179,15 +179,50 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
   }
 
   void _showCompleteDialog() {
+    final grade = _counter!.sessionGrade;
+    final gradeLabel = _counter!.gradeLabel;
+    final gradeColor = _gradeColor(grade);
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E293B),
         title: const Text('🏆 Quest Complete!', style: TextStyle(color: Colors.white)),
-        content: Text(
-          '+${widget.quest.rewardXp} XP  +${widget.quest.rewardGems} 💎',
-          style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 18),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: gradeColor.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: gradeColor),
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    'Nota: ',
+                    style: TextStyle(color: Colors.white70, fontSize: 16),
+                  ),
+                  Text(
+                    gradeLabel,
+                    style: TextStyle(
+                      color: gradeColor,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '+${widget.quest.rewardXp} XP  +${widget.quest.rewardGems} 💎',
+              style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 18),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -201,6 +236,21 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
         ],
       ),
     );
+  }
+
+  Color _gradeColor(SessionGrade grade) {
+    switch (grade) {
+      case SessionGrade.A:
+        return const Color(0xFF22C55E); // green
+      case SessionGrade.B:
+        return const Color(0xFF06B6D4); // cyan
+      case SessionGrade.C:
+        return const Color(0xFFFACC15); // yellow
+      case SessionGrade.D:
+        return const Color(0xFFF97316); // orange
+      case SessionGrade.E:
+        return const Color(0xFFEF4444); // red
+    }
   }
 
   @override
@@ -265,6 +315,17 @@ class _WorkoutScreenState extends State<WorkoutScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
+                        if (_repCount > 0) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Nota: ${_counter!.sessionGrade.name}',
+                            style: TextStyle(
+                              color: _gradeColor(_counter!.sessionGrade),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

@@ -29,6 +29,11 @@ ios/.symlinks/
 *.swp
 *.swo
 
+# Python
+.venv/
+__pycache__/
+*.pyc
+
 # Environment
 .env
 .env.local

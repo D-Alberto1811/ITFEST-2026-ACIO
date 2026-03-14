@@ -1,4 +1,14 @@
 PODS:
+  - AppAuth (1.7.6):
+    - AppAuth/Core (= 1.7.6)
+    - AppAuth/ExternalUserAgent (= 1.7.6)
+  - AppAuth/Core (1.7.6)
+  - AppAuth/ExternalUserAgent (1.7.6):
+    - AppAuth/Core
+  - AppCheckCore (11.2.0):
+    - GoogleUtilities/Environment (~> 8.0)
+    - GoogleUtilities/UserDefaults (~> 8.0)
+    - PromisesObjC (~> 2.4)
   - camera_avfoundation (0.0.1):
     - Flutter
   - Flutter (1.0.0)
@@ -10,6 +20,12 @@ PODS:
     - google_mlkit_commons
     - GoogleMLKit/PoseDetection (~> 9.0.0)
     - GoogleMLKit/PoseDetectionAccurate (~> 9.0.0)
+  - google_sign_in_ios (0.0.1):
+    - AppAuth (>= 1.7.4)
+    - Flutter
+    - FlutterMacOS
+    - GoogleSignIn (~> 8.0)
+    - GTMSessionFetcher (>= 3.4.0)
   - GoogleDataTransport (10.1.0):
     - nanopb (~> 3.30910.0)
     - PromisesObjC (~> 2.4)
@@ -21,6 +37,11 @@ PODS:
   - GoogleMLKit/PoseDetectionAccurate (9.0.0):
     - GoogleMLKit/MLKitCore
     - MLKitPoseDetectionAccurate (~> 1.0.0-beta16)
+  - GoogleSignIn (8.0.0):
+    - AppAuth (< 2.0, >= 1.7.3)
+    - AppCheckCore (~> 11.0)
+    - GTMAppAuth (< 5.0, >= 4.1.1)
+    - GTMSessionFetcher/Core (~> 3.3)
   - GoogleToolboxForMac/Defines (4.2.1)
   - GoogleToolboxForMac/Logger (4.2.1):
     - GoogleToolboxForMac/Defines (= 4.2.1)
@@ -35,7 +56,14 @@ PODS:
   - GoogleUtilities/UserDefaults (8.1.0):
     - GoogleUtilities/Logger
     - GoogleUtilities/Privacy
+  - GTMAppAuth (4.1.1):
+    - AppAuth/Core (~> 1.7)
+    - GTMSessionFetcher/Core (< 4.0, >= 3.3)
+  - GTMSessionFetcher (3.5.0):
+    - GTMSessionFetcher/Full (= 3.5.0)
   - GTMSessionFetcher/Core (3.5.0)
+  - GTMSessionFetcher/Full (3.5.0):
+    - GTMSessionFetcher/Core
   - MLImage (1.0.0-beta8)
   - MLKitCommon (14.0.0):
     - GoogleDataTransport (~> 10.0)
@@ -70,19 +98,32 @@ PODS:
   - nanopb/decode (3.30910.0)
   - nanopb/encode (3.30910.0)
   - PromisesObjC (2.4.0)
+  - shared_preferences_foundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - sqflite_darwin (0.0.4):
+    - Flutter
+    - FlutterMacOS
 
 DEPENDENCIES:
   - camera_avfoundation (from `.symlinks/plugins/camera_avfoundation/ios`)
   - Flutter (from `Flutter`)
   - google_mlkit_commons (from `.symlinks/plugins/google_mlkit_commons/ios`)
   - google_mlkit_pose_detection (from `.symlinks/plugins/google_mlkit_pose_detection/ios`)
+  - google_sign_in_ios (from `.symlinks/plugins/google_sign_in_ios/darwin`)
+  - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
+  - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
 
 SPEC REPOS:
   trunk:
+    - AppAuth
+    - AppCheckCore
     - GoogleDataTransport
     - GoogleMLKit
+    - GoogleSignIn
     - GoogleToolboxForMac
     - GoogleUtilities
+    - GTMAppAuth
     - GTMSessionFetcher
     - MLImage
     - MLKitCommon
@@ -103,16 +144,27 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/google_mlkit_commons/ios"
   google_mlkit_pose_detection:
     :path: ".symlinks/plugins/google_mlkit_pose_detection/ios"
+  google_sign_in_ios:
+    :path: ".symlinks/plugins/google_sign_in_ios/darwin"
+  shared_preferences_foundation:
+    :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
+  sqflite_darwin:
+    :path: ".symlinks/plugins/sqflite_darwin/darwin"
 
 SPEC CHECKSUMS:
+  AppAuth: d4f13a8fe0baf391b2108511793e4b479691fb73
+  AppCheckCore: cc8fd0a3a230ddd401f326489c99990b013f0c4f
   camera_avfoundation: 968a9a5323c79a99c166ad9d7866bfd2047b5a9b
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   google_mlkit_commons: a5e4ffae5bc59ea4c7b9025dc72cb6cb79dc1166
   google_mlkit_pose_detection: 211eabf55f5ea8d6a9537fdade0a37148fc84d8b
+  google_sign_in_ios: b48bb9af78576358a168361173155596c845f0b9
   GoogleDataTransport: aae35b7ea0c09004c3797d53c8c41f66f219d6a7
   GoogleMLKit: b1eee21a41c57704fe72483b15c85cb2c0cd7444
+  GoogleSignIn: ce8c89bb9b37fb624b92e7514cc67335d1e277e4
   GoogleToolboxForMac: d1a2cbf009c453f4d6ded37c105e2f67a32206d8
   GoogleUtilities: 00c88b9a86066ef77f0da2fab05f65d7768ed8e1
+  GTMAppAuth: f69bd07d68cd3b766125f7e072c45d7340dea0de
   GTMSessionFetcher: 5aea5ba6bd522a239e236100971f10cb71b96ab6
   MLImage: 0de5c6c2bf9e93b80ef752e2797f0836f03b58c0
   MLKitCommon: 47d47b50a031d00db62f1b0efe5a1d8b09a3b2e6
@@ -123,7 +175,9 @@ SPEC CHECKSUMS:
   MLKitXenoCommon: 1a4268c1222a6043047af5bb9435028206c63287
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
   PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
+  shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
+  sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
 
-PODFILE CHECKSUM: a47db6ee249817b9c53ef949ea8edf7f87970d36
+PODFILE CHECKSUM: e4d924bf396924be1fbdd8b589331ee4adf08085
 
 COCOAPODS: 1.16.2
