@@ -6,6 +6,7 @@ import '../models/quest.dart';
 import '../services/auth_service.dart';
 import '../services/local_storage_service.dart';
 import 'login_screen.dart';
+import 'path_screen.dart';
 import 'profile_screen.dart';
 import 'workout_screen.dart';
 
@@ -20,6 +21,8 @@ class _HomeScreenState extends State<HomeScreen> {
   AppUser? _currentUser;
   bool _isLoadingUser = true;
 
+  int _selectedTabIndex = 0;
+
   int level = 1;
   int xp = 0;
   int xpForNext = 100;
@@ -28,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Set<int> completedQuestIds = <int>{};
 
-  final List<Quest> quests = [
+  final List<Quest> dailyQuests = [
     Quest(
       id: 1,
       title: 'Rookie Push-ups',
@@ -71,10 +74,83 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
   ];
 
+  late final List<Quest> pathQuests = _buildPathQuests();
+
+  List<Quest> get allQuests => [...dailyQuests, ...pathQuests];
+
   @override
   void initState() {
     super.initState();
     _loadCurrentUserAndProgress();
+  }
+
+  List<Quest> _buildPathQuests() {
+    final List<Quest> result = [];
+    int id = 100;
+
+    final difficulties = [
+      _DifficultyPreset(
+        label: 'Beginner',
+        xp: 30,
+        gems: 1,
+        targets: [5, 8, 10],
+      ),
+      _DifficultyPreset(
+        label: 'Intermediate',
+        xp: 45,
+        gems: 2,
+        targets: [12, 15, 18],
+      ),
+      _DifficultyPreset(
+        label: 'Medium',
+        xp: 60,
+        gems: 3,
+        targets: [20, 24, 28],
+      ),
+      _DifficultyPreset(
+        label: 'Hard',
+        xp: 85,
+        gems: 4,
+        targets: [30, 35, 40],
+      ),
+      _DifficultyPreset(
+        label: 'Extreme',
+        xp: 120,
+        gems: 6,
+        targets: [45, 50, 60],
+      ),
+    ];
+
+    const exerciseTypes = ['pushup', 'squat', 'jumping_jack'];
+    const exerciseTitles = ['Push-up', 'Squat', 'Jumping Jack'];
+    const exerciseIcons = ['💪', '🦵', '🦘'];
+
+    for (int difficultyIndex = 0; difficultyIndex < difficulties.length; difficultyIndex++) {
+      final preset = difficulties[difficultyIndex];
+
+      for (int i = 0; i < 10; i++) {
+        final exerciseIndex = i % 3;
+        final type = exerciseTypes[exerciseIndex];
+        final exerciseTitle = exerciseTitles[exerciseIndex];
+        final icon = exerciseIcons[exerciseIndex];
+        final target = preset.targets[exerciseIndex] + ((i ~/ 3) * 2);
+
+        result.add(
+          Quest(
+            id: id++,
+            title: '${preset.label} $exerciseTitle ${i + 1}',
+            type: type,
+            target: target,
+            rewardXp: preset.xp + (i * 3),
+            rewardGems: preset.gems + (i ~/ 4),
+            icon: icon,
+            desc: 'Complete $target ${exerciseTitle.toLowerCase()}s',
+          ),
+        );
+      }
+    }
+
+    return result;
   }
 
   Future<void> _loadCurrentUserAndProgress() async {
@@ -177,7 +253,19 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(
         builder: (_) => ProfileScreen(
           user: user,
-          allQuests: quests,
+          allQuests: allQuests,
+        ),
+      ),
+    );
+  }
+
+  void _openWorkout(Quest quest) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WorkoutScreen(
+          quest: quest,
+          onComplete: () => _onQuestComplete(quest),
         ),
       ),
     );
@@ -203,76 +291,93 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       body: SafeArea(
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildTopBar(),
-                    const SizedBox(height: 20),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildTopBar(),
+                  const SizedBox(height: 20),
+                  if (_selectedTabIndex == 0) ...[
                     _buildHeroCard(displayName),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Daily Quests',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
+                    const SizedBox(height: 20),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Daily Quests',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 6),
-                    const Text(
-                      'Complete your daily fitness missions',
-                      style: TextStyle(
-                        color: Color(0xFF94A3B8),
-                        fontSize: 13,
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Complete your daily fitness missions',
+                        style: TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 13,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                  ] else ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFF334155)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text(
+                            'Quest Path',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          SizedBox(height: 6),
+                          Text(
+                            'Tap the unlocked circles to start the next mission.',
+                            style: TextStyle(
+                              color: Color(0xFF94A3B8),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverList.builder(
-                itemCount: quests.length,
-                itemBuilder: (context, index) {
-                  final quest = quests[index];
-                  final isCompleted = completedQuestIds.contains(quest.id);
-
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _buildQuestCard(
-                      quest,
-                      isCompleted: isCompleted,
-                    ),
-                  );
-                },
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
-                child: OutlinedButton.icon(
-                  onPressed: _logout,
-                  icon: const Icon(Icons.logout),
-                  label: const Text('Logout'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white70,
-                    side: const BorderSide(color: Color(0xFF334155)),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
+            Expanded(
+              child: IndexedStack(
+                index: _selectedTabIndex,
+                children: [
+                  _DailyQuestsTab(
+                    quests: dailyQuests,
+                    completedQuestIds: completedQuestIds,
+                    onQuestTap: _openWorkout,
                   ),
-                ),
+                  PathScreen(
+                    quests: pathQuests,
+                    completedQuestIds: completedQuestIds,
+                    onQuestTap: _openWorkout,
+                  ),
+                ],
               ),
             ),
+            _buildBottomTabs(),
           ],
         ),
       ),
@@ -408,6 +513,47 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildBottomTabs() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0F172A),
+        border: Border(
+          top: BorderSide(color: Color(0xFF1E293B)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _BottomTabButton(
+              label: 'Quests',
+              icon: Icons.flag_rounded,
+              isSelected: _selectedTabIndex == 0,
+              onTap: () {
+                setState(() {
+                  _selectedTabIndex = 0;
+                });
+              },
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _BottomTabButton(
+              label: 'Path',
+              icon: Icons.alt_route_rounded,
+              isSelected: _selectedTabIndex == 1,
+              onTap: () {
+                setState(() {
+                  _selectedTabIndex = 1;
+                });
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTopChip({
     required IconData icon,
     required String value,
@@ -470,22 +616,71 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+}
 
-  Widget _buildQuestCard(Quest quest, {required bool isCompleted}) {
+class _DifficultyPreset {
+  final String label;
+  final int xp;
+  final int gems;
+  final List<int> targets;
+
+  const _DifficultyPreset({
+    required this.label,
+    required this.xp,
+    required this.gems,
+    required this.targets,
+  });
+}
+
+class _DailyQuestsTab extends StatelessWidget {
+  final List<Quest> quests;
+  final Set<int> completedQuestIds;
+  final ValueChanged<Quest> onQuestTap;
+
+  const _DailyQuestsTab({
+    required this.quests,
+    required this.completedQuestIds,
+    required this.onQuestTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+      itemCount: quests.length,
+      itemBuilder: (context, index) {
+        final quest = quests[index];
+        final isCompleted = completedQuestIds.contains(quest.id);
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _DailyQuestCard(
+            quest: quest,
+            isCompleted: isCompleted,
+            onTap: isCompleted ? null : () => onQuestTap(quest),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _DailyQuestCard extends StatelessWidget {
+  final Quest quest;
+  final bool isCompleted;
+  final VoidCallback? onTap;
+
+  const _DailyQuestCard({
+    required this.quest,
+    required this.isCompleted,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: isCompleted
-          ? null
-          : () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => WorkoutScreen(
-                    quest: quest,
-                    onComplete: () => _onQuestComplete(quest),
-                  ),
-                ),
-              );
-            },
+      onTap: onTap,
       child: Opacity(
         opacity: isCompleted ? 0.70 : 1,
         child: Container(
@@ -542,14 +737,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        _buildRewardTag(
+                        _RewardTag(
                           icon: Icons.bolt_rounded,
                           text: '+${quest.rewardXp} XP',
                           color: const Color(0xFF06B6D4),
                         ),
                         const SizedBox(width: 8),
                         if (quest.rewardGems > 0)
-                          _buildRewardTag(
+                          _RewardTag(
                             icon: Icons.diamond_rounded,
                             text: '+${quest.rewardGems}',
                             color: const Color(0xFFA78BFA),
@@ -573,12 +768,21 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+}
 
-  Widget _buildRewardTag({
-    required IconData icon,
-    required String text,
-    required Color color,
-  }) {
+class _RewardTag extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color color;
+
+  const _RewardTag({
+    required this.icon,
+    required this.text,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
@@ -600,6 +804,57 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _BottomTabButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _BottomTabButton({
+    required this.label,
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF06B6D4) : const Color(0xFF334155),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              color: isSelected ? const Color(0xFF06B6D4) : const Color(0xFF94A3B8),
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : const Color(0xFF94A3B8),
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
