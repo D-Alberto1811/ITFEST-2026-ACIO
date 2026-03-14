@@ -10,7 +10,7 @@ class DatabaseService {
   static final DatabaseService instance = DatabaseService._();
 
   static const String _databaseName = 'fitlingo.db';
-  static const int _databaseVersion = 2;
+  static const int _databaseVersion = 3;
 
   static const String usersTable = 'users';
   static const String playerProgressTable = 'player_progress';
@@ -53,9 +53,16 @@ class DatabaseService {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      await _createPlayerProgressTable(db);
-      await _createQuestProgressTable(db);
+  if (oldVersion < 2) {
+    await _createPlayerProgressTable(db);
+    await _createQuestProgressTable(db);
+    }
+
+  if (oldVersion < 3) {
+    await db.execute('''
+      ALTER TABLE $playerProgressTable
+      ADD COLUMN total_xp INTEGER NOT NULL DEFAULT 0
+    ''');
     }
   }
 
@@ -89,6 +96,7 @@ class DatabaseService {
         user_id INTEGER PRIMARY KEY,
         level INTEGER NOT NULL,
         xp INTEGER NOT NULL,
+        total_xp INTEGER NOT NULL DEFAULT 0,
         xp_for_next INTEGER NOT NULL,
         gems INTEGER NOT NULL,
         streak_days INTEGER NOT NULL,

@@ -1,6 +1,5 @@
 ﻿import 'package:flutter/material.dart';
 
-import '../config/storage_config.dart';
 import '../models/app_user.dart';
 import '../models/player_progress.dart';
 import '../models/quest.dart';
@@ -25,6 +24,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   PlayerProgress? _progress;
   Set<int> _completedQuestIds = <int>{};
+
+  final List<_AchievementPlaceholder> _achievementPlaceholders = const [
+    _AchievementPlaceholder(
+      emoji: '🔥',
+      title: 'Streak Master',
+      targetText: '7 day streak',
+    ),
+    _AchievementPlaceholder(
+      emoji: '⭐',
+      title: 'XP Collector',
+      targetText: 'Reach 500 XP',
+    ),
+    _AchievementPlaceholder(
+      emoji: '💎',
+      title: 'Gem Hunter',
+      targetText: 'Collect 50 gems',
+    ),
+    _AchievementPlaceholder(
+      emoji: '🏆',
+      title: 'Quest Hero',
+      targetText: 'Complete 10 quests',
+    ),
+  ];
 
   @override
   void initState() {
@@ -54,393 +76,441 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  String _storageLabel() {
-    if (isSqliteMode) {
-      return 'SQLite (local)';
-    }
-    return 'Server auth + local SQLite progress';
-  }
-
-  String _storageDetails() {
-    if (isSqliteMode) {
-      return 'User account and app progress are stored locally in SQLite.';
-    }
-    return 'Account authentication is stored on the server. App progress is currently stored locally in SQLite.';
-  }
-
   @override
   Widget build(BuildContext context) {
-    final completedQuests = widget.allQuests
-        .where((q) => _completedQuestIds.contains(q.id))
-        .toList();
+    final progress = _progress;
+    final completedQuestCount = _completedQuestIds.length;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      appBar: AppBar(
-        title: const Text(
-          'Account Profile',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        centerTitle: false,
-      ),
+      backgroundColor: const Color(0xFFF5F5F5),
       body: _isLoading
           ? const Center(
               child: CircularProgressIndicator(
-                color: Color(0xFF06B6D4),
+                color: Color(0xFF58CC02),
               ),
             )
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildProfileHeader(),
-                  const SizedBox(height: 16),
-                  _buildStorageCard(),
-                  const SizedBox(height: 16),
-                  _buildProgressCard(),
-                  const SizedBox(height: 16),
-                  _buildQuestCard(
-                    title: 'Completed Quests',
-                    subtitle:
-                        '${completedQuests.length} / ${widget.allQuests.length} completed',
-                    quests: completedQuests,
-                    emptyText: 'No completed quests yet.',
-                  ),
-                  const SizedBox(height: 16),
-                  _buildQuestCard(
-                    title: 'All Quests',
-                    subtitle: '${widget.allQuests.length} total quests',
-                    quests: widget.allQuests,
-                    completedIds: _completedQuestIds,
-                  ),
-                ],
-              ),
-            ),
-    );
-  }
-
-  Widget _buildProfileHeader() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFF334155)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: const Color(0xFF0EA5E9),
-              borderRadius: BorderRadius.circular(36),
-            ),
-            child: Center(
-              child: Text(
-                widget.user.name.isNotEmpty
-                    ? widget.user.name[0].toUpperCase()
-                    : 'U',
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
+          : CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: _buildTopHeader(),
                 ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.user.name,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  widget.user.email,
-                  style: const TextStyle(
-                    color: Color(0xFF94A3B8),
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Provider: ${widget.user.authProvider}',
-                  style: const TextStyle(
-                    color: Color(0xFF64748B),
-                    fontSize: 12,
+                SliverToBoxAdapter(
+                  child: Transform.translate(
+                    offset: const Offset(0, -24),
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(28),
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildIdentitySection(),
+                            const SizedBox(height: 24),
+                            _buildStatsRow(progress),
+                            const SizedBox(height: 24),
+                            _buildOverviewCard(
+                              progress: progress,
+                              completedQuestCount: completedQuestCount,
+                            ),
+                            const SizedBox(height: 28),
+                            _buildSectionTitle('ACHIEVEMENTS'),
+                            const SizedBox(height: 14),
+                            _buildAchievementsRow(),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 
-  Widget _buildStorageCard() {
+  Widget _buildTopHeader() {
     return Container(
+      height: 300,
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF334155)),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+      decoration: const BoxDecoration(
+        color: Color(0xFFB8F28E),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Storage',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0F172A),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFF334155)),
-            ),
-            child: Text(
-              _storageLabel(),
-              style: const TextStyle(
-                color: Color(0xFF06B6D4),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            _storageDetails(),
-            style: const TextStyle(
-              color: Color(0xFF94A3B8),
-              fontSize: 14,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProgressCard() {
-    final progress = _progress;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF334155)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Progress Data',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
+          Row(
             children: [
-              _buildStatTile('Level', '${progress?.level ?? 1}'),
-              _buildStatTile('XP', '${progress?.xp ?? 0}'),
-              _buildStatTile('XP For Next', '${progress?.xpForNext ?? 100}'),
-              _buildStatTile('Gems', '${progress?.gems ?? 0}'),
-              _buildStatTile('Streak Days', '${progress?.streakDays ?? 0}'),
-              _buildStatTile(
-                'Updated At',
-                progress?.updatedAt.isNotEmpty == true
-                    ? progress!.updatedAt
-                    : '-',
-                wide: true,
+              Expanded(
+                child: Text(
+                  widget.user.name,
+                  style: const TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF3C3C3C),
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () {},
+                icon: const Icon(
+                  Icons.settings_outlined,
+                  size: 32,
+                  color: Color(0xFF4B4B4B),
+                ),
               ),
             ],
           ),
+          const Spacer(),
+          Center(
+            child: Container(
+              width: 170,
+              height: 170,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFD9C8),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: const Color(0xFF7A4A35),
+                  width: 6,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Positioned(
+                    bottom: 14,
+                    child: Container(
+                      width: 95,
+                      height: 70,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFE8B8D6),
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(40),
+                          bottom: Radius.circular(18),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.person_rounded,
+                    size: 110,
+                    color: Color(0xFF6E4A3B),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 22),
         ],
       ),
     );
   }
 
-  Widget _buildStatTile(String title, String value, {bool wide = false}) {
+  Widget _buildIdentitySection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '@${widget.user.name.toLowerCase().replaceAll(' ', '')}',
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFFA8A8A8),
+            letterSpacing: 1.1,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          widget.user.email,
+          style: const TextStyle(
+            fontSize: 14,
+            color: Color(0xFF7B7B7B),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatsRow(PlayerProgress? progress) {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildMainStat(
+            value: '${progress?.streakDays ?? 0}',
+            label: 'Streak',
+          ),
+        ),
+        Expanded(
+          child: _buildMainStat(
+            value: '${progress?.totalXp ?? 0}',
+            label: 'Total XP',
+          ),
+        ),
+        Expanded(
+          child: _buildMainStat(
+            value: '${progress?.level ?? 1}',
+            label: 'Level',
+          ),
+        ),
+        Expanded(
+          child: _buildMainStat(
+            value: '${progress?.gems ?? 0}',
+            label: 'Gems',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMainStat({
+    required String value,
+    required String label,
+  }) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF3C3C3C),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 14,
+            color: Color(0xFF8A8A8A),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOverviewCard({
+    required PlayerProgress? progress,
+    required int completedQuestCount,
+  }) {
+    final currentXp = progress?.xp ?? 0;
+    final xpForNext = progress?.xpForNext ?? 100;
+    final progressValue = xpForNext == 0 ? 0.0 : currentXp / xpForNext;
+
     return Container(
-      width: wide ? double.infinity : 160,
-      padding: const EdgeInsets.all(14),
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF334155)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFE7E7E7)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const Text(
+            'OVERVIEW',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFFA8A8A8),
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _buildOverviewItem(
+                  icon: '🔥',
+                  text: '${progress?.streakDays ?? 0} days',
+                ),
+              ),
+              Expanded(
+                child: _buildOverviewItem(
+                  icon: '💎',
+                  text: '${progress?.gems ?? 0} gems',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _buildOverviewItem(
+                  icon: '🏆',
+                  text: '$completedQuestCount quests',
+                ),
+              ),
+              Expanded(
+                child: _buildOverviewItem(
+                  icon: '⭐',
+                  text: '${progress?.totalXp ?? 0} XP',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'LEVEL PROGRESS',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF8F8F8F),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progressValue.clamp(0.0, 1.0),
+              minHeight: 12,
+              backgroundColor: const Color(0xFFEDEDED),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                Color(0xFF58CC02),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           Text(
-            title,
+            '$currentXp / $xpForNext XP to next level',
             style: const TextStyle(
-              color: Color(0xFF94A3B8),
               fontSize: 12,
+              color: Color(0xFF8A8A8A),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOverviewItem({
+    required String icon,
+    required String text,
+  }) {
+    return Row(
+      children: [
+        Text(icon, style: const TextStyle(fontSize: 24)),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF4A4A4A),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 15,
+        fontWeight: FontWeight.w900,
+        color: Color(0xFFA8A8A8),
+        letterSpacing: 1.1,
+      ),
+    );
+  }
+
+  Widget _buildAchievementsRow() {
+    return SizedBox(
+      height: 145,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _achievementPlaceholders.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 14),
+        itemBuilder: (context, index) {
+          final item = _achievementPlaceholders[index];
+          return _buildAchievementCard(item);
+        },
+      ),
+    );
+  }
+
+  Widget _buildAchievementCard(_AchievementPlaceholder achievement) {
+    return Container(
+      width: 120,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE7E7E7)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 58,
+            height: 58,
+            decoration: const BoxDecoration(
+              color: Color(0xFFFFF3BF),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                achievement.emoji,
+                style: const TextStyle(fontSize: 28),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            achievement.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF4A4A4A),
             ),
           ),
           const SizedBox(height: 6),
           Text(
-            value,
+            achievement.targetText,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
             style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-              fontSize: 14,
+              fontSize: 11,
+              height: 1.2,
+              color: Color(0xFF9A9A9A),
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildQuestCard({
-    required String title,
-    required String subtitle,
-    required List<Quest> quests,
-    Set<int>? completedIds,
-    String? emptyText,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF334155)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: const TextStyle(
-              color: Color(0xFF94A3B8),
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 14),
-          if (quests.isEmpty)
-            Text(
-              emptyText ?? 'No data.',
-              style: const TextStyle(
-                color: Color(0xFF64748B),
-              ),
-            )
-          else
-            ...quests.map(
-              (quest) {
-                final isCompleted = completedIds?.contains(quest.id) ?? true;
+class _AchievementPlaceholder {
+  final String emoji;
+  final String title;
+  final String targetText;
 
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isCompleted
-                          ? const Color(0xFF22C55E)
-                          : const Color(0xFF334155),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Text(
-                        quest.icon,
-                        style: const TextStyle(fontSize: 24),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              quest.title,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              quest.desc,
-                              style: const TextStyle(
-                                color: Color(0xFF94A3B8),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            '+${quest.rewardXp} XP',
-                            style: const TextStyle(
-                              color: Color(0xFF06B6D4),
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            '+${quest.rewardGems} 💎',
-                            style: const TextStyle(
-                              color: Color(0xFFA78BFA),
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            isCompleted ? 'Completed' : 'Not completed',
-                            style: TextStyle(
-                              color: isCompleted
-                                  ? const Color(0xFF22C55E)
-                                  : const Color(0xFF64748B),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-        ],
-      ),
-    );
-  }
+  const _AchievementPlaceholder({
+    required this.emoji,
+    required this.title,
+    required this.targetText,
+  });
 }

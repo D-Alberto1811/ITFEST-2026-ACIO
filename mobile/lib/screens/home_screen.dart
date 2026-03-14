@@ -22,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int xpForNext = 100;
   int gems = 0;
   int streakDays = 0;
+  int totalXp = 0;
 
   final List<Quest> quests = [
     Quest(
@@ -103,17 +104,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onQuestComplete(int rewardXp, int rewardGems) {
-    setState(() {
-      xp += rewardXp;
-      gems += rewardGems;
+  setState(() {
+    xp += rewardXp;
+    totalXp += rewardXp;
+    gems += rewardGems;
 
-      while (xp >= xpForNext) {
-        xp -= xpForNext;
-        level++;
-        xpForNext = (xpForNext * 1.5).toInt();
-      }
+    while (xp >= xpForNext) {
+      xp -= xpForNext;
+      level++;
+      xpForNext = (xpForNext * 1.5).toInt();
+    }
 
-      streakDays += 1;
+    streakDays += 1;
     });
   }
 
