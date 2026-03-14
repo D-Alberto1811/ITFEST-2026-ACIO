@@ -1,8 +1,10 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import '../models/app_user.dart';
 import '../models/player_progress.dart';
 import '../models/quest.dart';
+import '../services/api_client.dart';
+import '../services/auth_service.dart';
 import '../services/local_storage_service.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -56,6 +58,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _loadProfileData() async {
     try {
+      final isServer = await AuthService.instance.isServerSession();
+      if (isServer) {
+        final token = await AuthService.instance.getToken();
+        if (token != null) {
+          final res = await ApiClient.getProgress(token);
+          if (res != null && mounted) {
+            setState(() {
+              _progress = PlayerProgress(
+                userId: res.userId,
+                level: res.level,
+                xp: res.xp,
+                totalXp: res.totalXp,
+                xpForNext: res.xpForNext,
+                gems: res.gems,
+                streakDays: res.streakDays,
+                updatedAt: res.updatedAt,
+              );
+              _completedQuestIds = res.completedQuestIds.toSet();
+              _isLoading = false;
+            });
+            return;
+          }
+        }
+      }
       final progress =
           await LocalStorageService.instance.getOrCreateProgress(widget.user.id!);
       final completed =
