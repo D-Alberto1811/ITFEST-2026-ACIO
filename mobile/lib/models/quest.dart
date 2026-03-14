@@ -7,6 +7,8 @@ class Quest {
   final int rewardGems;
   final String icon;
   final String desc;
+  /// Dificultate pentru API: beginner | intermediate | medium | advanced | expert
+  final String? difficulty;
 
   Quest({
     required this.id,
@@ -17,5 +19,6 @@ class Quest {
     this.rewardGems = 0,
     required this.icon,
     required this.desc,
+    this.difficulty,
   });
 }

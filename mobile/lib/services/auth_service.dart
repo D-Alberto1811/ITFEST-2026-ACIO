@@ -149,6 +149,18 @@ class AuthService {
     return prefs.getInt('logged_in_user_id');
   }
 
+  /// Token JWT pentru request-uri autentificate (doar în server mode).
+  Future<String?> getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('auth_token');
+  }
+
+  /// True dacă sesiunea curentă e pe server (backend).
+  Future<bool> isServerSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('session_mode') == 'server';
+  }
+
   Future<AppUser?> getCurrentUser() async {
     final prefs = await SharedPreferences.getInstance();
     final isLoggedIn = prefs.getBool('is_logged_in') == true;
