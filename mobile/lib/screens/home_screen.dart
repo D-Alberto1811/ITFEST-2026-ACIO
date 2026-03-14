@@ -6,6 +6,7 @@ import '../models/quest.dart';
 import '../services/auth_service.dart';
 import '../services/local_storage_service.dart';
 import 'login_screen.dart';
+import 'profile_screen.dart';
 import 'workout_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -167,6 +168,21 @@ class _HomeScreenState extends State<HomeScreen> {
     await _saveProgress();
   }
 
+  void _openProfile() {
+    final user = _currentUser;
+    if (user == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProfileScreen(
+          user: user,
+          allQuests: quests,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoadingUser) {
@@ -250,7 +266,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             const SizedBox(height: 10),
                             GestureDetector(
-                              onTap: _logout,
+                              onTap: _openProfile,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 12,
@@ -267,13 +283,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
-                                      Icons.logout,
+                                      Icons.person,
                                       size: 16,
                                       color: Colors.white70,
                                     ),
                                     SizedBox(width: 6),
                                     Text(
-                                      'Logout',
+                                      'Account',
                                       style: TextStyle(
                                         color: Colors.white70,
                                         fontWeight: FontWeight.w600,
@@ -386,8 +402,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
             ),
-            const SliverToBoxAdapter(
-              child: SizedBox(height: 24),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                child: OutlinedButton.icon(
+                  onPressed: _logout,
+                  icon: const Icon(Icons.logout),
+                  label: const Text('Logout'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white70,
+                    side: const BorderSide(color: Color(0xFF334155)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
