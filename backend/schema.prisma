@@ -1,0 +1,17 @@
+// Schema FitLingo - documentație (format Prisma)
+// Migrările reale: Alembic (alembic/versions/)
+// DB: mysql://root@localhost:3306/itfest
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  passwordHash String   @default("") @map("password_hash")
+  authProvider String   @default("local") @map("auth_provider")
+  googleId     String?  @map("google_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([email])
+  @@index([googleId])
+  @@map("users")
+}
