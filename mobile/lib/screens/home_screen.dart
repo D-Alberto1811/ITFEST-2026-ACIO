@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../models/app_user.dart';
+import '../models/player_progress.dart';
 import '../models/quest.dart';
 import '../services/auth_service.dart';
+import '../services/local_storage_service.dart';
 import 'login_screen.dart';
 import 'workout_screen.dart';
 
@@ -22,6 +24,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int xpForNext = 100;
   int gems = 0;
   int streakDays = 0;
+
+  Set<int> completedQuestIds = <int>{};
 
   final List<Quest> quests = [
     Quest(
@@ -69,22 +73,40 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadCurrentUser();
+    _loadCurrentUserAndProgress();
   }
 
-  Future<void> _loadCurrentUser() async {
+  Future<void> _loadCurrentUserAndProgress() async {
     try {
       final user = await AuthService.instance.getCurrentUser();
 
-      if (!mounted) return;
+      if (user != null) {
+        final progress =
+            await LocalStorageService.instance.getOrCreateProgress(user.id!);
+        final questIds =
+            await LocalStorageService.instance.getCompletedQuestIds(user.id!);
 
+        if (!mounted) return;
+
+        setState(() {
+          _currentUser = user;
+          level = progress.level;
+          xp = progress.xp;
+          xpForNext = progress.xpForNext;
+          gems = progress.gems;
+          streakDays = progress.streakDays;
+          completedQuestIds = questIds;
+          _isLoadingUser = false;
+        });
+        return;
+      }
+
+      if (!mounted) return;
       setState(() {
-        _currentUser = user;
         _isLoadingUser = false;
       });
     } catch (_) {
       if (!mounted) return;
-
       setState(() {
         _isLoadingUser = false;
       });
@@ -102,10 +124,30 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _onQuestComplete(int rewardXp, int rewardGems) {
+  Future<void> _saveProgress() async {
+    final user = _currentUser;
+    if (user == null || user.id == null) return;
+
+    final progress = PlayerProgress(
+      userId: user.id!,
+      level: level,
+      xp: xp,
+      xpForNext: xpForNext,
+      gems: gems,
+      streakDays: streakDays,
+      updatedAt: DateTime.now().toIso8601String(),
+    );
+
+    await LocalStorageService.instance.saveProgress(progress);
+  }
+
+  Future<void> _onQuestComplete(Quest quest) async {
+    if (_currentUser == null || _currentUser!.id == null) return;
+    if (completedQuestIds.contains(quest.id)) return;
+
     setState(() {
-      xp += rewardXp;
-      gems += rewardGems;
+      xp += quest.rewardXp;
+      gems += quest.rewardGems;
 
       while (xp >= xpForNext) {
         xp -= xpForNext;
@@ -113,8 +155,16 @@ class _HomeScreenState extends State<HomeScreen> {
         xpForNext = (xpForNext * 1.5).toInt();
       }
 
-      streakDays = streakDays + 1;
+      streakDays += 1;
+      completedQuestIds.add(quest.id);
     });
+
+    await LocalStorageService.instance.markQuestCompleted(
+      _currentUser!.id!,
+      quest.id,
+    );
+
+    await _saveProgress();
   }
 
   @override
@@ -147,7 +197,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Header
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -239,8 +288,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                     const SizedBox(height: 24),
-
-                    // Barnaby + XP Bar
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
@@ -290,10 +337,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                                 const SizedBox(height: 8),
                                 ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.circular(999),
                                   child: LinearProgressIndicator(
-                                    value: (xp / xpForNext).clamp(0.0, 1.0),
-                                    minHeight: 8,
+                                    value: xpForNext == 0 ? 0 : xp / xpForNext,
+                                    minHeight: 12,
                                     backgroundColor: const Color(0xFF0F172A),
                                     valueColor:
                                         const AlwaysStoppedAnimation<Color>(
@@ -308,12 +355,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-
                     const Text(
-                      "📜 Today's Quests",
+                      'Daily Quests',
                       style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
                         color: Colors.white,
                       ),
                     ),
@@ -324,32 +370,24 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final q = quests[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _QuestCard(
-                        quest: q,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => WorkoutScreen(
-                              quest: q,
-                              onComplete: () => _onQuestComplete(
-                                q.rewardXp,
-                                q.rewardGems,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                  childCount: quests.length,
-                ),
+              sliver: SliverList.builder(
+                itemCount: quests.length,
+                itemBuilder: (context, index) {
+                  final quest = quests[index];
+                  final isCompleted = completedQuestIds.contains(quest.id);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _buildQuestCard(
+                      quest,
+                      isCompleted: isCompleted,
+                    ),
+                  );
+                },
               ),
+            ),
+            const SliverToBoxAdapter(
+              child: SizedBox(height: 24),
             ),
           ],
         ),
@@ -359,103 +397,112 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildStatChip(String label, String value) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFF334155)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 14)),
-          const SizedBox(width: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Color(0xFFFACC15),
-            ),
-          ),
-        ],
+      child: Text(
+        '$label $value',
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
       ),
     );
   }
-}
 
-class _QuestCard extends StatelessWidget {
-  final Quest quest;
-  final VoidCallback onTap;
-
-  const _QuestCard({
-    required this.quest,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildQuestCard(Quest quest, {required bool isCompleted}) {
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E293B),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFF475569)),
-        ),
-        child: Row(
-          children: [
-            Text(quest.icon, style: const TextStyle(fontSize: 32)),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    quest.title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  Text(
-                    quest.desc,
-                    style: const TextStyle(
-                      color: Color(0xFF94A3B8),
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  '+${quest.rewardXp} XP',
-                  style: const TextStyle(
-                    color: Color(0xFF06B6D4),
-                    fontWeight: FontWeight.bold,
+      onTap: isCompleted
+          ? null
+          : () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => WorkoutScreen(
+                    quest: quest,
+                    onComplete: () => _onQuestComplete(quest),
                   ),
                 ),
-                if (quest.rewardGems > 0)
+              );
+            },
+      child: Opacity(
+        opacity: isCompleted ? 0.65 : 1,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isCompleted
+                  ? const Color(0xFF22C55E)
+                  : const Color(0xFF334155),
+            ),
+          ),
+          child: Row(
+            children: [
+              Text(
+                quest.icon,
+                style: const TextStyle(fontSize: 28),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      quest.title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      isCompleted ? 'Completed' : quest.desc,
+                      style: TextStyle(
+                        color: isCompleted
+                            ? const Color(0xFF22C55E)
+                            : const Color(0xFF94A3B8),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
                   Text(
-                    '+${quest.rewardGems} 💎',
+                    '+${quest.rewardXp} XP',
                     style: const TextStyle(
-                      color: Color(0xFFA78BFA),
-                      fontSize: 12,
+                      color: Color(0xFF06B6D4),
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-              ],
-            ),
-            const SizedBox(width: 8),
-            const Icon(
-              Icons.arrow_forward_ios,
-              color: Color(0xFF64748B),
-              size: 16,
-            ),
-          ],
+                  if (quest.rewardGems > 0)
+                    Text(
+                      '+${quest.rewardGems} 💎',
+                      style: const TextStyle(
+                        color: Color(0xFFA78BFA),
+                        fontSize: 12,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                isCompleted ? Icons.check_circle : Icons.arrow_forward_ios,
+                color: isCompleted
+                    ? const Color(0xFF22C55E)
+                    : const Color(0xFF64748B),
+                size: 18,
+              ),
+            ],
+          ),
         ),
       ),
     );
