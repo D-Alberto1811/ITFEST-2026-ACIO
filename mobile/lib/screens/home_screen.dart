@@ -25,10 +25,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   int level = 1;
   int xp = 0;
+  int totalXp = 0;
   int xpForNext = 100;
   int gems = 0;
   int streakDays = 0;
-  int totalXp = 0;
 
   Set<int> completedQuestIds = <int>{};
 
@@ -126,7 +126,9 @@ class _HomeScreenState extends State<HomeScreen> {
     const exerciseTitles = ['Push-up', 'Squat', 'Jumping Jack'];
     const exerciseIcons = ['💪', '🦵', '🦘'];
 
-    for (int difficultyIndex = 0; difficultyIndex < difficulties.length; difficultyIndex++) {
+    for (int difficultyIndex = 0;
+        difficultyIndex < difficulties.length;
+        difficultyIndex++) {
       final preset = difficulties[difficultyIndex];
 
       for (int i = 0; i < 10; i++) {
@@ -170,6 +172,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _currentUser = user;
           level = progress.level;
           xp = progress.xp;
+          totalXp = progress.totalXp;
           xpForNext = progress.xpForNext;
           gems = progress.gems;
           streakDays = progress.streakDays;
@@ -202,166 +205,75 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _onQuestComplete(int rewardXp, int rewardGems) {
-    setState(() {
-      xp += rewardXp;
-      gems += rewardGems;
+  Future<void> _saveProgress() async {
+    final user = _currentUser;
+    if (user == null || user.id == null) return;
 
-    while (xp >= xpForNext) {
-      xp -= xpForNext;
-      level++;
-      xpForNext = (xpForNext * 1.5).toInt();
-    }
+    final progress = PlayerProgress(
+      userId: user.id!,
+      level: level,
+      xp: xp,
+      totalXp: totalXp,
+      xpForNext: xpForNext,
+      gems: gems,
+      streakDays: streakDays,
+      updatedAt: DateTime.now().toIso8601String(),
+    );
 
-      streakDays += 1;
-    });
+    await LocalStorageService.instance.saveProgress(progress);
   }
 
-  void _showAccountSheet() {
-    final name = _currentUser?.name.trim().isNotEmpty == true
-        ? _currentUser!.name.trim()
-        : 'Athlete';
+  Future<void> _onQuestComplete(Quest quest) async {
+    if (_currentUser == null || _currentUser!.id == null) return;
+    if (completedQuestIds.contains(quest.id)) return;
 
-    final email = _currentUser?.email ?? 'No email available';
+    setState(() {
+      xp += quest.rewardXp;
+      totalXp += quest.rewardXp;
+      gems += quest.rewardGems;
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF111827),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      while (xp >= xpForNext) {
+        xp -= xpForNext;
+        level++;
+        xpForNext = (xpForNext * 1.5).toInt();
+      }
+
+      streakDays += 1;
+      completedQuestIds.add(quest.id);
+    });
+
+    await LocalStorageService.instance.markQuestCompleted(
+      _currentUser!.id!,
+      quest.id,
+    );
+
+    await _saveProgress();
+  }
+
+  void _openProfile() {
+    final user = _currentUser;
+    if (user == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProfileScreen(
+          user: user,
+          allQuests: allQuests,
+        ),
       ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF334155),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Container(
-                  width: 76,
-                  height: 76,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [
-                        Color(0xFF22C55E),
-                        Color(0xFF06B6D4),
-                      ],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF06B6D4).withOpacity(0.20),
-                        blurRadius: 24,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(
-                      name.isNotEmpty ? name[0].toUpperCase() : 'A',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  email,
-                  style: const TextStyle(
-                    color: Color(0xFF94A3B8),
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildAccountStatCard(
-                        icon: Icons.local_fire_department_rounded,
-                        label: 'Streak',
-                        value: '$streakDays',
-                        color: const Color(0xFFF97316),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildAccountStatCard(
-                        icon: Icons.diamond_rounded,
-                        label: 'Currency',
-                        value: '$gems',
-                        color: const Color(0xFFA855F7),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildAccountStatCard(
-                        icon: Icons.workspace_premium_rounded,
-                        label: 'Level',
-                        value: '$level',
-                        color: const Color(0xFF22C55E),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildAccountStatCard(
-                        icon: Icons.bolt_rounded,
-                        label: 'XP',
-                        value: '$xp / $xpForNext',
-                        color: const Color(0xFF06B6D4),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _logout();
-                    },
-                    icon: const Icon(Icons.logout_rounded),
-                    label: const Text('Logout'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: Color(0xFF334155)),
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+    );
+  }
+
+  void _openWorkout(Quest quest) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WorkoutScreen(
+          quest: quest,
+          onComplete: () => _onQuestComplete(quest),
+        ),
+      ),
     );
   }
 
@@ -927,7 +839,8 @@ class _BottomTabButton extends StatelessWidget {
           color: isSelected ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected ? const Color(0xFF06B6D4) : const Color(0xFF334155),
+            color:
+                isSelected ? const Color(0xFF06B6D4) : const Color(0xFF334155),
           ),
         ),
         child: Row(
@@ -935,7 +848,9 @@ class _BottomTabButton extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: isSelected ? const Color(0xFF06B6D4) : const Color(0xFF94A3B8),
+              color: isSelected
+                  ? const Color(0xFF06B6D4)
+                  : const Color(0xFF94A3B8),
               size: 20,
             ),
             const SizedBox(width: 8),
