@@ -1,18 +1,35 @@
-import 'dart:math';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
+import '../config/api_config.dart';
+import '../config/storage_config.dart';
 import '../models/app_user.dart';
+import '../models/player_progress.dart';
+import '../services/auth_service.dart';
+import '../services/database_service.dart';
 
-enum RankingCategory {
-  pushUps,
-  squats,
-  jumpingJacks,
-}
-
+/// Worldwide rankings screen inspired by the attached mockup:
+/// - title + subtitle
+/// - 3 tabs: Push-Ups / Squats / Jumping Jacks
+/// - top 10 visible immediately
+/// - current user shown under the leaderboard when outside top 10
+/// - secondary card: user's ranking across all exercises
+///
+/// Current behavior:
+/// - In SQLite mode, the screen reads real data from local SQLite.
+/// - In server mode, the screen expects a backend leaderboard endpoint.
+///
+/// Expected server response shapes supported:
+/// 1) { "entries": [ { "rank": 1, "name": "...", "score": 1000, "is_current_user": false } ] }
+/// 2) { "leaderboard": [ ... ] }
+/// 3) [ { "rank": 1, "name": "...", "score": 1000 } ]
 class WorldwideRankingsScreen extends StatefulWidget {
   final AppUser user;
-  final Map<RankingCategory, int> currentUserExerciseTotals;
+
+  /// Optional fallback values for the current user.
+  final Map<RankingCategory, int>? currentUserExerciseTotals;
 
   const WorldwideRankingsScreen({
     super.key,
@@ -45,7 +62,117 @@ class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
   @override
   void initState() {
     super.initState();
-    _buildRankingsOnce();
+    _repository = isServerMode
+        ? _ServerRankingsRepository(
+            currentUser: widget.user,
+            currentUserTotals: widget.currentUserExerciseTotals,
+          )
+        : _SqliteRankingsRepository(
+            currentUser: widget.user,
+            currentUserTotals: widget.currentUserExerciseTotals,
+          );
+    _loadData();
+  }
+
+  Future<void> _loadData({bool showRefreshState = false}) async {
+    if (showRefreshState) {
+      setState(() {
+        _isRefreshing = true;
+      });
+    }
+
+    try {
+      final results = await Future.wait([
+        _repository.getLeaderboard(_selectedCategory),
+        _repository.getPersonalSummary(),
+      ]);
+
+      if (!mounted) return;
+
+      setState(() {
+        _snapshot = results[0] as LeaderboardSnapshot;
+        _personalSummary = results[1] as PersonalRankingsSummary;
+        _error = null;
+        _isLoading = false;
+        _isRefreshing = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString().replaceFirst('Exception: ', '');
+        _isLoading = false;
+        _isRefreshing = false;
+      });
+    }
+  }
+
+  Future<void> _onCategoryChanged(RankingCategory category) async {
+    if (_selectedCategory == category) return;
+
+    setState(() {
+      _selectedCategory = category;
+      _isLoading = true;
+      _error = null;
+    });
+
+    await _loadData();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F172A),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0F172A),
+        elevation: 0,
+        title: const Text(
+          'Worldwide Rankings',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: () => _loadData(showRefreshState: true),
+          color: const Color(0xFF06B6D4),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+            children: [
+              const Text(
+                'Compare your performance with players around the world.',
+                style: TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 15,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 20),
+              _CategoryTabs(
+                selectedCategory: _selectedCategory,
+                onCategorySelected: _onCategoryChanged,
+              ),
+              const SizedBox(height: 20),
+              if (_isLoading && _snapshot == null) ...[
+                const _LoadingCard(),
+              ] else if (_error != null) ...[
+                _ErrorCard(
+                  message: _error!,
+                  onRetry: _loadData,
+                ),
+              ] else if (_snapshot != null) ...[
+                _LeaderboardCard(
+                  snapshot: _snapshot!,
+                  isRefreshing: _isRefreshing,
+                ),
+                const SizedBox(height: 18),
+                if (_personalSummary != null)
+                  _YourRankingsCard(summary: _personalSummary!),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _buildRankingsOnce() {
@@ -60,156 +187,302 @@ class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
     }
   }
 
-  List<_RankingEntry> _generateRankingsForCategory(RankingCategory category) {
-    final random = Random(category.index + 37);
+  int? get scoreNeededToReachPrevious {
+    final previous = previousEntry;
+    if (previous == null) return null;
+    final difference = previous.score - currentUserEntry.score;
+    return difference < 0 ? 0 : difference + 1;
+  }
+}
 
-    final names = <String>[
-      'Alex',
-      'Maya',
-      'Chris',
-      'Jordan',
-      'Taylor',
-      'Sam',
-      'Emma',
-      'Noah',
-      'Olivia',
-      'Liam',
-      'Ava',
-      'Ethan',
-      'Sophia',
-      'James',
-      'Lucas',
-      'Mila',
-      'Amelia',
-      'Daniel',
-      'Ella',
-      'Mason',
-      'David',
-      'Sofia',
-      'Henry',
-      'Chloe',
-      'Grace',
-      'Leo',
-      'Aria',
-      'Sebastian',
-      'Zoe',
-      'Benjamin',
-    ];
+class PersonalRankingsSummary {
+  final Map<RankingCategory, LeaderboardEntry> rankings;
 
-    final userName = widget.user.name.trim().isEmpty
-        ? 'You'
-        : widget.user.name.trim();
+  const PersonalRankingsSummary({
+    required this.rankings,
+  });
+}
 
-    final userScore = widget.currentUserExerciseTotals[category] ?? 0;
+abstract class RankingsRepository {
+  Future<LeaderboardSnapshot> getLeaderboard(RankingCategory category);
 
-    final baseMin = switch (category) {
-      RankingCategory.pushUps => 1200,
-      RankingCategory.squats => 1800,
-      RankingCategory.jumpingJacks => 1500,
-    };
+  Future<PersonalRankingsSummary> getPersonalSummary();
+}
 
-    final baseMax = switch (category) {
-      RankingCategory.pushUps => 6200,
-      RankingCategory.squats => 8600,
-      RankingCategory.jumpingJacks => 7600,
-    };
+class _SqliteRankingsRepository implements RankingsRepository {
+  final AppUser currentUser;
+  final Map<RankingCategory, int>? currentUserTotals;
 
-    final entries = <_RankingEntry>[];
+  _SqliteRankingsRepository({
+    required this.currentUser,
+    this.currentUserTotals,
+  });
 
-    for (var i = 0; i < names.length; i++) {
-      final value = baseMin + random.nextInt(baseMax - baseMin + 1);
+  final DatabaseService _database = DatabaseService.instance;
+
+  @override
+  Future<LeaderboardSnapshot> getLeaderboard(RankingCategory category) async {
+    final users = await _database.getAllUsers();
+
+    final entries = <LeaderboardEntry>[];
+
+    for (final user in users) {
+      if (user.id == null) continue;
+
+      final progress = await _database.getPlayerProgress(user.id!) ??
+          PlayerProgress.initial(user.id!);
+
+      final score = _scoreFromProgress(progress, category);
+
       entries.add(
-        _RankingEntry(
-          name: '${names[i]} ${String.fromCharCode(65 + (i % 8))}.',
-          score: value,
-          isCurrentUser: false,
+        LeaderboardEntry(
+          rank: 0,
+          playerName: _displayName(user),
+          score: score,
+          isCurrentUser: user.id == currentUser.id,
         ),
       );
     }
 
-    entries.add(
-      _RankingEntry(
-        name: userName,
-        score: userScore,
-        isCurrentUser: true,
-      ),
-    );
+    if (!entries.any((entry) => entry.isCurrentUser)) {
+      final fallbackScore = currentUserTotals?[category] ?? 0;
+      entries.add(
+        LeaderboardEntry(
+          rank: 0,
+          playerName: _displayName(currentUser),
+          score: fallbackScore,
+          isCurrentUser: true,
+        ),
+      );
+    }
 
     entries.sort((a, b) => b.score.compareTo(a.score));
 
-    return List<_RankingEntry>.generate(entries.length, (index) {
+    final rankedEntries = List<LeaderboardEntry>.generate(entries.length, (index) {
       final entry = entries[index];
-      return entry.copyWith(rank: index + 1);
+      return LeaderboardEntry(
+        rank: index + 1,
+        playerName: entry.playerName,
+        score: entry.score,
+        isCurrentUser: entry.isCurrentUser,
+      );
     });
+
+    final currentUserEntry = rankedEntries.firstWhere(
+      (entry) => entry.isCurrentUser,
+      orElse: () => rankedEntries.isNotEmpty
+          ? rankedEntries.first
+          : LeaderboardEntry(
+              rank: 1,
+              playerName: _displayName(currentUser),
+              score: currentUserTotals?[category] ?? 0,
+              isCurrentUser: true,
+            ),
+    );
+
+    return LeaderboardSnapshot(
+      category: category,
+      topEntries: rankedEntries.take(10).toList(),
+      currentUserEntry: currentUserEntry,
+    );
+
+  @override
+  Future<PersonalRankingsSummary> getPersonalSummary() async {
+    final results = await Future.wait(
+      RankingCategory.values.map(getLeaderboard),
+    );
+
+    return PersonalRankingsSummary(
+      rankings: {
+        for (final snapshot in results) snapshot.category: snapshot.currentUserEntry,
+      },
+    );
   }
 
-  String _categoryTitle(RankingCategory category) {
+  int _scoreFromProgress(PlayerProgress progress, RankingCategory category) {
     switch (category) {
       case RankingCategory.pushUps:
-        return 'Push-ups';
+        return progress.totalPushups;
       case RankingCategory.squats:
-        return 'Squats';
+        return progress.totalSquats;
       case RankingCategory.jumpingJacks:
-        return 'Jumping Jacks';
+        return progress.totalJumpingJacks;
     }
   }
 
-  IconData _categoryIcon(RankingCategory category) {
-    switch (category) {
-      case RankingCategory.pushUps:
-        return Icons.fitness_center_rounded;
-      case RankingCategory.squats:
-        return Icons.accessibility_new_rounded;
-      case RankingCategory.jumpingJacks:
-        return Icons.directions_run_rounded;
-    }
+  String _displayName(AppUser user) {
+    final trimmed = user.name.trim();
+    return trimmed.isEmpty ? 'Unknown Athlete' : trimmed;
   }
 
-  Color _podiumColor(int rank) {
-    switch (rank) {
-      case 1:
-        return _gold;
-      case 2:
-        return _silver;
-      case 3:
-        return _bronze;
-      default:
-        return _accent;
+class _ServerRankingsRepository implements RankingsRepository {
+  final AppUser currentUser;
+  final Map<RankingCategory, int>? currentUserTotals;
+
+  _ServerRankingsRepository({
+    required this.currentUser,
+    this.currentUserTotals,
+  });
+
+  @override
+  Future<LeaderboardSnapshot> getLeaderboard(RankingCategory category) async {
+    final token = await AuthService.instance.getToken();
+    if (token == null || token.isEmpty) {
+      throw Exception('Missing server token.');
     }
+
+    final uri = Uri.parse(
+      '$apiBaseUrl/gamification/leaderboard?category=${category.apiKey}',
+    );
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Server leaderboard endpoint is not available yet. Add /gamification/leaderboard on backend.',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    final rawList = _extractEntriesList(decoded);
+
+    final entries = <LeaderboardEntry>[];
+    for (var i = 0; i < rawList.length; i++) {
+      final item = Map<String, dynamic>.from(rawList[i] as Map);
+      final rank = (item['rank'] as num?)?.toInt() ?? (i + 1);
+      final name = (item['name'] ??
+              item['player_name'] ??
+              item['username'] ??
+              item['display_name'] ??
+              '')
+          .toString();
+      final score = (item['score'] ??
+                  item['value'] ??
+                  item['total'] ??
+                  item['count'] ??
+                  item['reps'] ??
+                  0)
+              as num? ??
+          0;
+      final userId = (item['user_id'] as num?)?.toInt();
+      final isCurrent = item['is_current_user'] == true ||
+          item['isCurrentUser'] == true ||
+          (userId != null && currentUser.id != null && userId == currentUser.id) ||
+          name.trim() == currentUser.name.trim();
+
+      entries.add(
+        LeaderboardEntry(
+          rank: rank,
+          playerName: name.trim().isEmpty ? 'Unknown Athlete' : name.trim(),
+          score: score.toInt(),
+          isCurrentUser: isCurrent,
+        ),
+      );
+    }
+
+    if (entries.isEmpty) {
+      throw Exception('No leaderboard data returned from server.');
+    }
+
+    entries.sort((a, b) => a.rank.compareTo(b.rank));
+
+    LeaderboardEntry? currentEntry;
+    for (final entry in entries) {
+      if (entry.isCurrentUser) {
+        currentEntry = entry;
+        break;
+      }
+    }
+
+    currentEntry ??= LeaderboardEntry(
+      rank: entries.length + 1,
+      playerName: currentUser.name.trim().isEmpty ? 'You' : currentUser.name.trim(),
+      score: currentUserTotals?[category] ?? 0,
+      isCurrentUser: true,
+    );
+
+    return LeaderboardSnapshot(
+      category: category,
+      topEntries: entries.take(10).toList(),
+      currentUserEntry: currentEntry,
+    );
   }
 
   @override
-  Widget build(BuildContext context) {
-    final currentEntries = _cachedRankings[_selectedCategory]!;
-    final currentUserEntry = _currentUserEntries[_selectedCategory]!;
+  Future<PersonalRankingsSummary> getPersonalSummary() async {
+    final results = await Future.wait(
+      RankingCategory.values.map(getLeaderboard),
+    );
 
-    return Scaffold(
-      backgroundColor: _bg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      _TopCircleButton(
-                        icon: Icons.arrow_back_rounded,
-                        onTap: () => Navigator.of(context).pop(),
-                      ),
-                      const Spacer(),
-                      const Text(
-                        'Leaderboard',
-                        style: TextStyle(
-                          color: _text,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const Spacer(),
-                      const SizedBox(width: 46),
-                    ],
+    return PersonalRankingsSummary(
+      rankings: {
+        for (final snapshot in results) snapshot.category: snapshot.currentUserEntry,
+      },
+    );
+  }
+
+  List<dynamic> _extractEntriesList(dynamic decoded) {
+    if (decoded is List) return decoded;
+    if (decoded is Map<String, dynamic>) {
+      final entries = decoded['entries'];
+      if (entries is List) return entries;
+
+      final leaderboard = decoded['leaderboard'];
+      if (leaderboard is List) return leaderboard;
+
+      final data = decoded['data'];
+      if (data is List) return data;
+    }
+    return const [];
+  }
+}
+
+class _CategoryTabs extends StatelessWidget {
+  final RankingCategory selectedCategory;
+  final ValueChanged<RankingCategory> onCategorySelected;
+
+  const _CategoryTabs({
+    required this.selectedCategory,
+    required this.onCategorySelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: RankingCategory.values.map((category) {
+          final isSelected = category == selectedCategory;
+          return Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: GestureDetector(
+              onTap: () => onCategorySelected(category),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? const Color(0xFF06B6D4).withOpacity(0.15)
+                      : const Color(0xFF111827),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isSelected
+                        ? const Color(0xFF06B6D4)
+                        : const Color(0xFF334155),
+                  ),
+                ),
+                child: Text(
+                  category.label,
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : const Color(0xFFCBD5E1),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
                   ),
                   const SizedBox(height: 20),
                   _buildCurrentUserCard(currentUserEntry),
@@ -309,6 +582,19 @@ class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
       ),
     );
   }
+}
+
+class _LeaderboardRow extends StatelessWidget {
+  final LeaderboardEntry entry;
+
+  const _LeaderboardRow({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = entry.isCurrentUser ? Colors.white : const Color(0xFFE5E7EB);
+    final backgroundColor = entry.isCurrentUser
+        ? const Color(0xFF06B6D4).withOpacity(0.12)
+        : Colors.transparent;
 
   Widget _buildCategorySelector() {
     return Container(
@@ -553,4 +839,19 @@ class _TopCircleButton extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatNumber(int value) {
+  final text = value.toString();
+  final buffer = StringBuffer();
+
+  for (var i = 0; i < text.length; i++) {
+    final reverseIndex = text.length - i;
+    buffer.write(text[i]);
+    if (reverseIndex > 1 && reverseIndex % 3 == 1) {
+      buffer.write(',');
+    }
+  }
+
+  return buffer.toString();
 }
