@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import '../config/storage_config.dart';
 import '../models/app_user.dart';
@@ -54,40 +55,158 @@ class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
     _loadLeaderboard();
   }
 
-  String _categoryTitle(RankingCategory category) {
+  int _scoreFromProgress(PlayerProgress progress, RankingCategory category) {
     switch (category) {
       case RankingCategory.pushUps:
         return 'Push-Ups';
       case RankingCategory.squats:
-        return 'Squats';
+        return progress.totalSquats;
       case RankingCategory.jumpingJacks:
-        return 'Jumping Jacks';
+        return progress.totalJumpingJacks;
     }
   }
 
-  IconData _categoryIcon(RankingCategory category) {
-    switch (category) {
-      case RankingCategory.pushUps:
-        return Icons.fitness_center_rounded;
-      case RankingCategory.squats:
-        return Icons.accessibility_new_rounded;
-      case RankingCategory.jumpingJacks:
-        return Icons.directions_run_rounded;
-    }
+  String _displayName(AppUser user) {
+    final trimmed = user.name.trim();
+    return trimmed.isEmpty ? 'Unknown Athlete' : trimmed;
   }
 
-  Color _podiumColor(int rank) {
-    switch (rank) {
-      case 1:
-        return _gold;
-      case 2:
-        return _silver;
-      case 3:
-        return _bronze;
-      default:
-        return _accent;
+class _ServerRankingsRepository implements RankingsRepository {
+  final AppUser currentUser;
+  final Map<RankingCategory, int>? currentUserTotals;
+
+  _ServerRankingsRepository({
+    required this.currentUser,
+    this.currentUserTotals,
+  });
+
+  @override
+  Future<LeaderboardSnapshot> getLeaderboard(RankingCategory category) async {
+    final token = await AuthService.instance.getToken();
+    if (token == null || token.isEmpty) {
+      throw Exception('Missing server token.');
     }
+
+    final uri = Uri.parse(
+      '$apiBaseUrl/gamification/leaderboard?category=${category.apiKey}',
+    );
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Server leaderboard endpoint is not available yet. Add /gamification/leaderboard on backend.',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    final rawList = _extractEntriesList(decoded);
+
+    final entries = <LeaderboardEntry>[];
+    for (var i = 0; i < rawList.length; i++) {
+      final item = Map<String, dynamic>.from(rawList[i] as Map);
+      final rank = (item['rank'] as num?)?.toInt() ?? (i + 1);
+      final name = (item['name'] ??
+              item['player_name'] ??
+              item['username'] ??
+              item['display_name'] ??
+              '')
+          .toString();
+      final score = (item['score'] ??
+                  item['value'] ??
+                  item['total'] ??
+                  item['count'] ??
+                  item['reps'] ??
+                  0)
+              as num? ??
+          0;
+      final userId = (item['user_id'] as num?)?.toInt();
+      final isCurrent = item['is_current_user'] == true ||
+          item['isCurrentUser'] == true ||
+          (userId != null && currentUser.id != null && userId == currentUser.id) ||
+          name.trim() == currentUser.name.trim();
+
+      entries.add(
+        LeaderboardEntry(
+          rank: rank,
+          playerName: name.trim().isEmpty ? 'Unknown Athlete' : name.trim(),
+          score: score.toInt(),
+          isCurrentUser: isCurrent,
+        ),
+      );
+    }
+
+    if (entries.isEmpty) {
+      throw Exception('No leaderboard data returned from server.');
+    }
+
+    entries.sort((a, b) => a.rank.compareTo(b.rank));
+
+    LeaderboardEntry? currentEntry;
+    for (final entry in entries) {
+      if (entry.isCurrentUser) {
+        currentEntry = entry;
+        break;
+      }
+    }
+
+    currentEntry ??= LeaderboardEntry(
+      rank: entries.length + 1,
+      playerName: currentUser.name.trim().isEmpty ? 'You' : currentUser.name.trim(),
+      score: currentUserTotals?[category] ?? 0,
+      isCurrentUser: true,
+    );
+
+    return LeaderboardSnapshot(
+      category: category,
+      topEntries: entries.take(10).toList(),
+      currentUserEntry: currentEntry,
+    );
   }
+
+  @override
+  Future<PersonalRankingsSummary> getPersonalSummary() async {
+    final results = await Future.wait(
+      RankingCategory.values.map(getLeaderboard),
+    );
+
+    return PersonalRankingsSummary(
+      rankings: {
+        for (final snapshot in results) snapshot.category: snapshot.currentUserEntry,
+      },
+    );
+  }
+
+  List<dynamic> _extractEntriesList(dynamic decoded) {
+    if (decoded is List) return decoded;
+    if (decoded is Map<String, dynamic>) {
+      final entries = decoded['entries'];
+      if (entries is List) return entries;
+
+      final leaderboard = decoded['leaderboard'];
+      if (leaderboard is List) return leaderboard;
+
+      final data = decoded['data'];
+      if (data is List) return data;
+    }
+    return const [];
+  }
+}
+
+class _CategoryTabs extends StatelessWidget {
+  final RankingCategory selectedCategory;
+  final ValueChanged<RankingCategory> onCategorySelected;
+
+  const _CategoryTabs({
+    required this.selectedCategory,
+    required this.onCategorySelected,
+  });
 
   Future<void> _loadLeaderboard({bool refresh = false}) async {
     if (refresh) {
@@ -352,6 +471,19 @@ class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
       ),
     );
   }
+}
+
+class _LeaderboardRow extends StatelessWidget {
+  final LeaderboardEntry entry;
+
+  const _LeaderboardRow({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = entry.isCurrentUser ? Colors.white : const Color(0xFFE5E7EB);
+    final backgroundColor = entry.isCurrentUser
+        ? const Color(0xFF06B6D4).withOpacity(0.12)
+        : Colors.transparent;
 
   Widget _buildCategorySelector() {
     return Container(
