@@ -7,7 +7,7 @@ enum StorageMode {
 ///
 /// StorageMode.server  -> current backend/server auth
 /// StorageMode.sqlite  -> local SQLite auth
-const StorageMode appStorageMode = StorageMode.sqlite;
+const StorageMode appStorageMode = StorageMode.server;
 
 bool get isServerMode => appStorageMode == StorageMode.server;
 bool get isSqliteMode => appStorageMode == StorageMode.sqlite;

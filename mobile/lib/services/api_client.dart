@@ -69,6 +69,14 @@ class ApiClient {
       xpForNext: (body['xp_for_next'] as num?)?.toInt() ?? 35,
       gems: (body['gems'] as num?)?.toInt() ?? 0,
       streakDays: (body['streak_days'] as num?)?.toInt() ?? 0,
+      bestStreakDays: (body['best_streak_days'] as num?)?.toInt() ?? 0,
+      totalPushups: (body['total_pushups'] as num?)?.toInt() ?? 0,
+      totalSquats: (body['total_squats'] as num?)?.toInt() ?? 0,
+      totalJumpingJacks: (body['total_jumping_jacks'] as num?)?.toInt() ?? 0,
+      totalWorkoutsCompleted: (body['total_workouts_completed'] as num?)?.toInt() ?? 0,
+      totalDailyChallengesCompleted:
+          (body['total_daily_challenges_completed'] as num?)?.toInt() ?? 0,
+      lastStreakDate: body['last_streak_date'] as String?,
       updatedAt: body['updated_at'] as String? ?? '',
       completedQuestIds: (body['completed_quest_ids'] as List<dynamic>?)
               ?.map((e) => (e as num).toInt())
@@ -86,33 +94,38 @@ class ApiClient {
     required String exerciseType,
     required int repsCompleted,
     String difficulty = 'beginner',
+    int? rewardXp,
+    int? rewardGems,
   }) async {
+    final body = <String, dynamic>{
+      'quest_id': questId,
+      'exercise_type': exerciseType,
+      'reps_completed': repsCompleted,
+      'difficulty': difficulty,
+    };
+    if (rewardXp != null) body['reward_xp'] = rewardXp;
+    if (rewardGems != null) body['reward_gems'] = rewardGems;
     final resp = await http.post(
       Uri.parse('$_base/gamification/complete-quest'),
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
       },
-      body: jsonEncode({
-        'quest_id': questId,
-        'exercise_type': exerciseType,
-        'reps_completed': repsCompleted,
-        'difficulty': difficulty,
-      }),
+      body: jsonEncode(body),
     );
     if (resp.statusCode != 200) return null;
-    final body = jsonDecode(resp.body) as Map<String, dynamic>?;
-    if (body == null) return null;
+    final resBody = jsonDecode(resp.body) as Map<String, dynamic>?;
+    if (resBody == null) return null;
     return CompleteQuestResponse(
-      level: (body['level'] as num?)?.toInt() ?? 1,
-      xp: (body['xp'] as num?)?.toInt() ?? 0,
-      totalXp: (body['total_xp'] as num?)?.toInt() ?? 0,
-      xpForNext: (body['xp_for_next'] as num?)?.toInt() ?? 35,
-      gems: (body['gems'] as num?)?.toInt() ?? 0,
-      streakDays: (body['streak_days'] as num?)?.toInt() ?? 0,
-      updatedAt: body['updated_at'] as String?,
-      xpEarned: (body['xp_earned'] as num?)?.toInt() ?? 0,
-      gemsEarned: (body['gems_earned'] as num?)?.toInt() ?? 0,
+      level: (resBody['level'] as num?)?.toInt() ?? 1,
+      xp: (resBody['xp'] as num?)?.toInt() ?? 0,
+      totalXp: (resBody['total_xp'] as num?)?.toInt() ?? 0,
+      xpForNext: (resBody['xp_for_next'] as num?)?.toInt() ?? 35,
+      gems: (resBody['gems'] as num?)?.toInt() ?? 0,
+      streakDays: (resBody['streak_days'] as num?)?.toInt() ?? 0,
+      updatedAt: resBody['updated_at'] as String?,
+      xpEarned: (resBody['xp_earned'] as num?)?.toInt() ?? 0,
+      gemsEarned: (resBody['gems_earned'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -173,6 +186,13 @@ class ProgressResponse {
   final int xpForNext;
   final int gems;
   final int streakDays;
+  final int bestStreakDays;
+  final int totalPushups;
+  final int totalSquats;
+  final int totalJumpingJacks;
+  final int totalWorkoutsCompleted;
+  final int totalDailyChallengesCompleted;
+  final String? lastStreakDate;
   final String updatedAt;
   final List<int> completedQuestIds;
   final List<String> unlockedAchievements;
@@ -185,6 +205,13 @@ class ProgressResponse {
     required this.xpForNext,
     required this.gems,
     required this.streakDays,
+    this.bestStreakDays = 0,
+    this.totalPushups = 0,
+    this.totalSquats = 0,
+    this.totalJumpingJacks = 0,
+    this.totalWorkoutsCompleted = 0,
+    this.totalDailyChallengesCompleted = 0,
+    this.lastStreakDate,
     required this.updatedAt,
     required this.completedQuestIds,
     required this.unlockedAchievements,

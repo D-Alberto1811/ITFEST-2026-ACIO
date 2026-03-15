@@ -4,7 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import User
+from models import User, PlayerProgress
 from schemas import (
     RegisterRequest,
     LoginRequest,
@@ -52,9 +52,35 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+    _create_initial_progress(db, user.id)
 
     token = create_access_token(user.id)
     return TokenResponse(access_token=token, user=_user_to_response(user))
+
+
+def _create_initial_progress(db, user_id: int) -> None:
+    """Creează progres inițial pentru user (level 1, 0 XP, etc.)."""
+    if db.query(PlayerProgress).filter(PlayerProgress.user_id == user_id).first():
+        return
+    from datetime import datetime
+    db.add(PlayerProgress(
+        user_id=user_id,
+        level=1,
+        xp=0,
+        total_xp=0,
+        xp_for_next=100,
+        gems=0,
+        streak_days=0,
+        best_streak_days=0,
+        total_pushups=0,
+        total_squats=0,
+        total_jumping_jacks=0,
+        total_workouts_completed=0,
+        total_daily_challenges_completed=0,
+        last_streak_date=None,
+        updated_at=datetime.utcnow(),
+    ))
+    db.commit()
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -117,6 +143,7 @@ async def google_auth(data: GoogleAuthRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+    _create_initial_progress(db, user.id)
 
     token = create_access_token(user.id)
     return TokenResponse(access_token=token, user=_user_to_response(user))

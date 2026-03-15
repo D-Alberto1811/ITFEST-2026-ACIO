@@ -82,11 +82,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _loadProfileData() async {
     try {
-      final localProgress =
-          await LocalStorageService.instance.getOrCreateProgress(widget.user.id!);
-      final localCompleted =
-          await LocalStorageService.instance.getCompletedQuestIds(widget.user.id!);
-
       final isServer = await AuthService.instance.isServerSession();
       if (isServer) {
         final token = await AuthService.instance.getToken();
@@ -94,6 +89,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final res = await ApiClient.getProgress(token);
 
           if (res != null && mounted) {
+            final dailyQuests = buildDailyQuestsForUser(userId: widget.user.id ?? 0);
+            final dailyCompleted = res.completedQuestIds
+                .where((questId) => dailyQuests.any((quest) => quest.id == questId))
+                .length;
             setState(() {
               _progress = PlayerProgress(
                 userId: widget.user.id ?? 0,
@@ -103,23 +102,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 xpForNext: res.xpForNext,
                 gems: res.gems,
                 streakDays: res.streakDays,
-                bestStreakDays: localProgress.bestStreakDays > res.streakDays
-                    ? localProgress.bestStreakDays
+                bestStreakDays: res.bestStreakDays > res.streakDays
+                    ? res.bestStreakDays
                     : res.streakDays,
-                totalPushups: localProgress.totalPushups,
-                totalSquats: localProgress.totalSquats,
-                totalJumpingJacks: localProgress.totalJumpingJacks,
-                totalWorkoutsCompleted: localProgress.totalWorkoutsCompleted > 0
-                    ? localProgress.totalWorkoutsCompleted
-                    : res.completedQuestIds.length,
-                totalDailyChallengesCompleted:
-                    localProgress.totalDailyChallengesCompleted > 0
-                        ? localProgress.totalDailyChallengesCompleted
-                        : res.completedQuestIds
-                            .where((questId) =>
-                                buildDailyQuestsForUser(userId: widget.user.id ?? 0).any((quest) => quest.id == questId))
-                            .length,
-                lastStreakDate: localProgress.lastStreakDate,
+                totalPushups: res.totalPushups,
+                totalSquats: res.totalSquats,
+                totalJumpingJacks: res.totalJumpingJacks,
+                totalWorkoutsCompleted: res.totalWorkoutsCompleted,
+                totalDailyChallengesCompleted: dailyCompleted,
+                lastStreakDate: res.lastStreakDate,
                 updatedAt: DateTime.now().toIso8601String(),
               );
               _completedQuestIds = res.completedQuestIds.toSet();
@@ -128,7 +119,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
             return;
           }
         }
+        // Server mode: do not fall back to SQLite
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
+        return;
       }
+
+      // SQLite mode only: load progress and quests from local DB
+      final localProgress =
+          await LocalStorageService.instance.getOrCreateProgress(widget.user.id!);
+      final localCompleted =
+          await LocalStorageService.instance.getCompletedQuestIds(widget.user.id!);
 
       if (!mounted) return;
 

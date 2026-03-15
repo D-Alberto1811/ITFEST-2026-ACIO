@@ -404,12 +404,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final user = await AuthService.instance.getCurrentUser();
 
       if (user != null) {
-        final localProgress =
-            await LocalStorageService.instance.getOrCreateProgress(user.id!);
-
         final localNotifications = await _loadNotificationsForUser(user.id!);
-
         final isServer = await AuthService.instance.isServerSession();
+
         if (isServer) {
           final token = await AuthService.instance.getToken();
           if (token != null) {
@@ -431,26 +428,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 gems = progressRes.gems;
                 streakDays = progressRes.streakDays;
                 completedQuestIds = progressRes.completedQuestIds.toSet();
-
-                bestStreakDays = localProgress.bestStreakDays > progressRes.streakDays
-                    ? localProgress.bestStreakDays
+                bestStreakDays = progressRes.bestStreakDays > progressRes.streakDays
+                    ? progressRes.bestStreakDays
                     : progressRes.streakDays;
-                totalPushups = localProgress.totalPushups;
-                totalSquats = localProgress.totalSquats;
-                totalJumpingJacks = localProgress.totalJumpingJacks;
-                totalWorkoutsCompleted = localProgress.totalWorkoutsCompleted > 0
-                    ? localProgress.totalWorkoutsCompleted
-                    : progressRes.completedQuestIds.length;
-                totalDailyChallengesCompleted =
-                    localProgress.totalDailyChallengesCompleted > 0
-                        ? localProgress.totalDailyChallengesCompleted
-                        : progressRes.completedQuestIds
-                            .where((questId) =>
-                                _dailyQuests.any((quest) => quest.id == questId))
-                            .length;
-                lastStreakDate = localProgress.lastStreakDate;
+                totalPushups = progressRes.totalPushups;
+                totalSquats = progressRes.totalSquats;
+                totalJumpingJacks = progressRes.totalJumpingJacks;
+                totalWorkoutsCompleted = progressRes.totalWorkoutsCompleted;
+                lastStreakDate = progressRes.lastStreakDate;
                 _dailyQuestCycle = currentCycle;
                 _dailyQuests = currentDailyQuests;
+                totalDailyChallengesCompleted = progressRes.completedQuestIds
+                    .where((questId) =>
+                        currentDailyQuests.any((q) => q.id == questId))
+                    .length;
 
                 _notifications = localNotifications;
                 _isLoadingUser = false;
@@ -464,8 +455,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               return;
             }
           }
+          // Server mode: do not fall back to SQLite; show user with loading done
+          if (mounted) {
+            setState(() {
+              _currentUser = user;
+              _dailyQuestCycle = currentDailyQuestCycle();
+              _dailyQuests = buildDailyQuestsForCycle(
+                userId: user.id!,
+                cycle: currentDailyQuestCycle(),
+              );
+              _notifications = localNotifications;
+              _isLoadingUser = false;
+            });
+            _scheduleStreakReminderIfLoggedIn();
+          }
+          return;
         }
 
+        // SQLite mode only: load progress and quests from local DB
         final progress =
             await LocalStorageService.instance.getOrCreateProgress(user.id!);
         final questIds =
@@ -656,6 +663,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           exerciseType: quest.type,
           repsCompleted: quest.target,
           difficulty: quest.difficulty ?? 'beginner',
+          rewardXp: quest.rewardXp,
+          rewardGems: quest.rewardGems,
         );
 
         if (res != null && mounted) {
@@ -674,12 +683,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
             completedQuestIds.add(quest.id);
           });
-
-          await LocalStorageService.instance.markQuestCompleted(
-            _currentUser!.id!,
-            quest.id,
-          );
-          await _saveProgress();
 
           await _addNotification(
             title: 'Quest completed',
@@ -742,11 +745,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       completedQuestIds.add(quest.id);
     });
 
-    await LocalStorageService.instance.markQuestCompleted(
-      _currentUser!.id!,
-      quest.id,
-    );
-    await _saveProgress();
+    if (!await AuthService.instance.isServerSession()) {
+      await LocalStorageService.instance.markQuestCompleted(
+        _currentUser!.id!,
+        quest.id,
+      );
+      await _saveProgress();
+    }
 
     await _addNotification(
       title: 'Quest completed',
