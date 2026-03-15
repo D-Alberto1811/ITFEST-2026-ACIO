@@ -17,6 +17,7 @@ import '../widgets/home/home_hero_card.dart';
 import '../widgets/home/home_section_headers.dart';
 import 'path_screen.dart';
 import 'profile_screen.dart';
+import 'stretching_screen.dart';
 import 'workout_screen.dart';
 import 'worldwide_rankings_screen.dart';
 
@@ -617,7 +618,8 @@ class _HomeScreenState extends State<HomeScreen> {
           if (streakDays > previousStreak) {
             await _addNotification(
               title: 'Streak updated',
-              message: 'Your streak is now $streakDays day${streakDays == 1 ? '' : 's'}.',
+              message:
+                  'Your streak is now $streakDays day${streakDays == 1 ? '' : 's'}.',
             );
           }
 
@@ -733,6 +735,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _openStretching() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const StretchingScreen(),
+      ),
+    );
+  }
+
   void _openWorldwideRankings() {
     final user = _currentUser;
     if (user == null) return;
@@ -742,10 +753,10 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(
         builder: (_) => WorldwideRankingsScreen(
           user: user,
-          currentUserExerciseTotals: const {
-            RankingCategory.pushUps: 2140,
-            RankingCategory.squats: 4910,
-            RankingCategory.jumpingJacks: 1650,
+          currentUserExerciseTotals: {
+            RankingCategory.pushUps: totalPushups,
+            RankingCategory.squats: totalSquats,
+            RankingCategory.jumpingJacks: totalJumpingJacks,
           },
         ),
       ),
@@ -830,6 +841,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       _selectedTabIndex = index;
                     });
                   },
+                  onStretchTap: _openStretching,
                   onLeaderboardTap: _openWorldwideRankings,
                 ),
               ),
@@ -1027,11 +1039,13 @@ class _TopIconButtonWithBadge extends StatelessWidget {
 class _HomeBottomDock extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onTabSelected;
+  final VoidCallback onStretchTap;
   final VoidCallback onLeaderboardTap;
 
   const _HomeBottomDock({
     required this.selectedIndex,
     required this.onTabSelected,
+    required this.onStretchTap,
     required this.onLeaderboardTap,
   });
 
@@ -1071,6 +1085,16 @@ class _HomeBottomDock extends StatelessWidget {
               onTap: () => onTabSelected(1),
               selectedBorderColor: const Color(0xFF06B6D4),
               selectedIconColor: const Color(0xFF06B6D4),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _DockIconButton(
+              icon: Icons.self_improvement_rounded,
+              isSelected: false,
+              onTap: onStretchTap,
+              selectedBorderColor: const Color(0xFF8B5CF6),
+              selectedIconColor: const Color(0xFF8B5CF6),
             ),
           ),
           const SizedBox(width: 10),
