@@ -7,11 +7,9 @@ import '../models/quest.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/local_storage_service.dart';
-import '../widgets/home/home_bottom_tabs.dart';
 import '../widgets/home/home_daily_quests_tab.dart';
 import '../widgets/home/home_hero_card.dart';
 import '../widgets/home/home_section_headers.dart';
-import '../widgets/home/home_top_bar.dart';
 import 'login_screen.dart';
 import 'path_screen.dart';
 import 'profile_screen.dart';
@@ -62,8 +60,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (user != null) {
         final localProgress =
             await LocalStorageService.instance.getOrCreateProgress(user.id!);
-        final localQuestIds =
-            await LocalStorageService.instance.getCompletedQuestIds(user.id!);
 
         final isServer = await AuthService.instance.isServerSession();
         if (isServer) {
@@ -82,7 +78,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 streakDays = progressRes.streakDays;
                 completedQuestIds = progressRes.completedQuestIds.toSet();
 
-                // Păstrăm totalurile locale pentru achievements
                 totalPushups = localProgress.totalPushups;
                 totalSquats = localProgress.totalSquats;
                 totalJumpingJacks = localProgress.totalJumpingJacks;
@@ -104,17 +99,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
         setState(() {
           _currentUser = user;
-          level = localProgress.level;
-          xp = localProgress.xp;
-          totalXp = localProgress.totalXp;
-          xpForNext = localProgress.xpForNext;
-          gems = localProgress.gems;
-          streakDays = localProgress.streakDays;
-          completedQuestIds = localQuestIds;
-          totalPushups = localProgress.totalPushups;
-          totalSquats = localProgress.totalSquats;
-          totalJumpingJacks = localProgress.totalJumpingJacks;
-          lastStreakDate = localProgress.lastStreakDate;
+          level = progress.level;
+          xp = progress.xp;
+          totalXp = progress.totalXp;
+          xpForNext = progress.xpForNext;
+          gems = progress.gems;
+          streakDays = progress.streakDays;
+          completedQuestIds = questIds;
+          totalPushups = progress.totalPushups;
+          totalSquats = progress.totalSquats;
+          totalJumpingJacks = progress.totalJumpingJacks;
+          lastStreakDate = progress.lastStreakDate;
           _isLoadingUser = false;
         });
         return;
@@ -352,18 +347,10 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  HomeTopBar(
+                  _HomeTopBar(
                     streakDays: streakDays,
                     gems: gems,
                     onProfileTap: _openProfile,
-                  ),
-                  const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: ElevatedButton(
-                      onPressed: _openWorldwideRankings,
-                      child: const Text('Worldwide Rankings'),
-                    ),
                   ),
                   const SizedBox(height: 20),
                   if (_selectedTabIndex == 0) ...[
@@ -398,15 +385,238 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            HomeBottomTabs(
-              selectedIndex: _selectedTabIndex,
-              onTabSelected: (index) {
-                setState(() {
-                  _selectedTabIndex = index;
-                });
-              },
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: SafeArea(
+                top: false,
+                child: _HomeBottomDock(
+                  selectedIndex: _selectedTabIndex,
+                  onTabSelected: (index) {
+                    setState(() {
+                      _selectedTabIndex = index;
+                    });
+                  },
+                  onLeaderboardTap: _openWorldwideRankings,
+                ),
+              ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeTopBar extends StatelessWidget {
+  final int streakDays;
+  final int gems;
+  final VoidCallback onProfileTap;
+
+  const _HomeTopBar({
+    required this.streakDays,
+    required this.gems,
+    required this.onProfileTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Image.asset(
+          'assets/images/logo.png',
+          height: 48,
+          fit: BoxFit.contain,
+        ),
+        const Spacer(),
+        _HomeTopChip(
+          icon: Icons.local_fire_department_rounded,
+          value: streakDays.toString(),
+          iconColor: const Color(0xFFF97316),
+        ),
+        const SizedBox(width: 8),
+        _HomeTopChip(
+          icon: Icons.diamond_rounded,
+          value: gems.toString(),
+          iconColor: const Color(0xFFA78BFA),
+        ),
+        const SizedBox(width: 8),
+        _RoundActionButton(
+          icon: Icons.person_rounded,
+          onTap: onProfileTap,
+        ),
+      ],
+    );
+  }
+}
+
+class _HomeTopChip extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final Color iconColor;
+
+  const _HomeTopChip({
+    required this.icon,
+    required this.value,
+    required this.iconColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 17, color: iconColor),
+          const SizedBox(width: 6),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoundActionButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _RoundActionButton({
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 46,
+        height: 46,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E293B),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFF334155)),
+        ),
+        child: Icon(
+          icon,
+          color: Colors.white,
+          size: 22,
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeBottomDock extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onTabSelected;
+  final VoidCallback onLeaderboardTap;
+
+  const _HomeBottomDock({
+    required this.selectedIndex,
+    required this.onTabSelected,
+    required this.onLeaderboardTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827).withOpacity(0.95),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFF334155)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.28),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _DockIconButton(
+              icon: Icons.flag_rounded,
+              isSelected: selectedIndex == 0,
+              onTap: () => onTabSelected(0),
+              selectedBorderColor: const Color(0xFF06B6D4),
+              selectedIconColor: const Color(0xFF06B6D4),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _DockIconButton(
+              icon: Icons.alt_route_rounded,
+              isSelected: selectedIndex == 1,
+              onTap: () => onTabSelected(1),
+              selectedBorderColor: const Color(0xFF06B6D4),
+              selectedIconColor: const Color(0xFF06B6D4),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _DockIconButton(
+              icon: Icons.emoji_events_rounded,
+              isSelected: false,
+              onTap: onLeaderboardTap,
+              selectedBorderColor: const Color(0xFFFACC15),
+              selectedIconColor: const Color(0xFFFACC15),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DockIconButton extends StatelessWidget {
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final Color selectedBorderColor;
+  final Color selectedIconColor;
+
+  const _DockIconButton({
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+    required this.selectedBorderColor,
+    required this.selectedIconColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? selectedBorderColor : const Color(0xFF334155),
+          ),
+        ),
+        child: Icon(
+          icon,
+          color: isSelected ? selectedIconColor : const Color(0xFF94A3B8),
+          size: 22,
         ),
       ),
     );
