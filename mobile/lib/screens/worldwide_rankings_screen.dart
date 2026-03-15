@@ -34,7 +34,7 @@ class WorldwideRankingsScreen extends StatefulWidget {
   const WorldwideRankingsScreen({
     super.key,
     required this.user,
-    this.currentUserExerciseTotals,
+    required this.currentUserExerciseTotals,
   });
 
   @override
@@ -43,15 +43,21 @@ class WorldwideRankingsScreen extends StatefulWidget {
 }
 
 class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
-  late final RankingsRepository _repository;
-
-  bool _isLoading = true;
-  bool _isRefreshing = false;
-  String? _error;
+  static const Color _bg = Color(0xFF0F172A);
+  static const Color _panel = Color(0xFF111827);
+  static const Color _card = Color(0xFF1E293B);
+  static const Color _border = Color(0xFF334155);
+  static const Color _muted = Color(0xFF94A3B8);
+  static const Color _text = Colors.white;
+  static const Color _accent = Color(0xFF06B6D4);
+  static const Color _gold = Color(0xFFFACC15);
+  static const Color _silver = Color(0xFFE5E7EB);
+  static const Color _bronze = Color(0xFFFB923C);
 
   RankingCategory _selectedCategory = RankingCategory.pushUps;
-  LeaderboardSnapshot? _snapshot;
-  PersonalRankingsSummary? _personalSummary;
+
+  late final Map<RankingCategory, List<_RankingEntry>> _cachedRankings;
+  late final Map<RankingCategory, _RankingEntry> _currentUserEntries;
 
   @override
   void initState() {
@@ -168,61 +174,17 @@ class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
       ),
     );
   }
-}
 
-enum RankingCategory {
-  pushUps('Push-Ups', 'pushups'),
-  squats('Squats', 'squats'),
-  jumpingJacks('Jumping Jacks', 'jumping_jacks');
+  void _buildRankingsOnce() {
+    _cachedRankings = {};
+    _currentUserEntries = {};
 
-  final String label;
-  final String apiKey;
-
-  const RankingCategory(this.label, this.apiKey);
-}
-
-class LeaderboardEntry {
-  final int rank;
-  final String playerName;
-  final int score;
-  final bool isCurrentUser;
-
-  const LeaderboardEntry({
-    required this.rank,
-    required this.playerName,
-    required this.score,
-    this.isCurrentUser = false,
-  });
-}
-
-class LeaderboardSnapshot {
-  final RankingCategory category;
-  final List<LeaderboardEntry> topEntries;
-  final LeaderboardEntry currentUserEntry;
-
-  const LeaderboardSnapshot({
-    required this.category,
-    required this.topEntries,
-    required this.currentUserEntry,
-  });
-
-  bool get isCurrentUserInTopTen =>
-      topEntries.any((entry) => entry.isCurrentUser || entry.rank == currentUserEntry.rank);
-
-  LeaderboardEntry? get previousEntry {
-    if (currentUserEntry.rank <= 1) return null;
-
-    final List<LeaderboardEntry> pool = <LeaderboardEntry>[
-      ...topEntries,
-      currentUserEntry,
-    ]..sort((a, b) => a.rank.compareTo(b.rank));
-
-    for (final entry in pool) {
-      if (entry.rank == currentUserEntry.rank - 1) {
-        return entry;
-      }
+    for (final category in RankingCategory.values) {
+      final rankings = _generateRankingsForCategory(category);
+      _cachedRankings[category] = rankings;
+      _currentUserEntries[category] =
+          rankings.firstWhere((entry) => entry.isCurrentUser);
     }
-    return null;
   }
 
   int? get scoreNeededToReachPrevious {
@@ -323,7 +285,6 @@ class _SqliteRankingsRepository implements RankingsRepository {
       topEntries: rankedEntries.take(10).toList(),
       currentUserEntry: currentUserEntry,
     );
-  }
 
   @override
   Future<PersonalRankingsSummary> getPersonalSummary() async {
@@ -353,7 +314,6 @@ class _SqliteRankingsRepository implements RankingsRepository {
     final trimmed = user.name.trim();
     return trimmed.isEmpty ? 'Unknown Athlete' : trimmed;
   }
-}
 
 class _ServerRankingsRepository implements RankingsRepository {
   final AppUser currentUser;
@@ -524,94 +484,100 @@ class _CategoryTabs extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                     fontSize: 14,
                   ),
-                ),
+                  const SizedBox(height: 20),
+                  _buildCurrentUserCard(currentUserEntry),
+                  const SizedBox(height: 18),
+                  _buildCategorySelector(),
+                ],
               ),
             ),
-          );
-        }).toList(),
+            const SizedBox(height: 16),
+            Expanded(
+              child: IndexedStack(
+                index: RankingCategory.values.indexOf(_selectedCategory),
+                children: RankingCategory.values.map((category) {
+                  return _buildRankingList(
+                    category,
+                    _cachedRankings[category]!,
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
-}
 
-class _LeaderboardCard extends StatelessWidget {
-  final LeaderboardSnapshot snapshot;
-  final bool isRefreshing;
-
-  const _LeaderboardCard({
-    required this.snapshot,
-    required this.isRefreshing,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final currentUser = snapshot.currentUserEntry;
-    final needed = snapshot.scoreNeededToReachPrevious;
-
+  Widget _buildCurrentUserCard(_RankingEntry userEntry) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF111827),
+        color: _panel,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFF1F2937)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 20,
-            offset: Offset(0, 12),
-          ),
-        ],
+        border: Border.all(color: _border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Text(
-                snapshot.category.label,
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: _card,
+              shape: BoxShape.circle,
+              border: Border.all(color: _border),
+            ),
+            child: Center(
+              child: Text(
+                '#${userEntry.rank}',
                 style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
+                  color: _accent,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
                 ),
               ),
-              const Spacer(),
-              if (isRefreshing)
-                const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Color(0xFF06B6D4),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Your position',
+                  style: TextStyle(
+                    color: _muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          ...snapshot.topEntries.map(
-            (entry) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _LeaderboardRow(entry: entry),
-            ),
-          ),
-          if (!snapshot.isCurrentUserInTopTen) ...[
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 10),
-              child: Divider(color: Color(0xFF334155)),
-            ),
-            _LeaderboardRow(entry: currentUser),
-            if (needed != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                '$needed more to reach #${currentUser.rank - 1}',
-                style: const TextStyle(
-                  color: Color(0xFF94A3B8),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                const SizedBox(height: 4),
+                Text(
+                  userEntry.name,
+                  style: const TextStyle(
+                    color: _text,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-              ),
-            ],
-          ],
+                const SizedBox(height: 4),
+                Text(
+                  '${userEntry.score} ${_categoryTitle(_selectedCategory).toLowerCase()}',
+                  style: const TextStyle(
+                    color: _muted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            _categoryIcon(_selectedCategory),
+            color: _accent,
+            size: 24,
+          ),
         ],
       ),
     );
@@ -630,38 +596,184 @@ class _LeaderboardRow extends StatelessWidget {
         ? const Color(0xFF06B6D4).withOpacity(0.12)
         : Colors.transparent;
 
+  Widget _buildCategorySelector() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(16),
+        color: _panel,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _border),
+      ),
+      child: Row(
+        children: RankingCategory.values.map((category) {
+          final isSelected = _selectedCategory == category;
+
+          return Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(
+                right: category != RankingCategory.values.last ? 8 : 0,
+              ),
+              child: GestureDetector(
+                onTap: () {
+                  if (_selectedCategory == category) return;
+                  setState(() {
+                    _selectedCategory = category;
+                  });
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isSelected ? _card : _bg,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isSelected ? _accent : _border,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        _categoryIcon(category),
+                        color: isSelected ? _accent : _muted,
+                        size: 20,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _categoryTitle(category),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: isSelected ? _text : _muted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildRankingList(
+    RankingCategory category,
+    List<_RankingEntry> entries,
+  ) {
+    return ListView.builder(
+      key: PageStorageKey('rankings_${category.name}'),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+      itemCount: entries.length,
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _buildRankingTile(entry),
+        );
+      },
+    );
+  }
+
+  Widget _buildRankingTile(_RankingEntry entry) {
+    final highlight = entry.isCurrentUser;
+    final isTopThree = entry.rank <= 3;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: highlight ? _card : _panel,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: highlight
+              ? _accent
+              : isTopThree
+                  ? _podiumColor(entry.rank).withOpacity(0.55)
+                  : _border,
+          width: highlight ? 1.4 : 1,
+        ),
+        boxShadow: highlight
+            ? [
+                BoxShadow(
+                  color: _accent.withOpacity(0.10),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+              ]
+            : null,
       ),
       child: Row(
         children: [
-          SizedBox(
+          Container(
             width: 42,
-            child: _RankBadge(rank: entry.rank),
+            height: 42,
+            decoration: BoxDecoration(
+              color: _bg,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isTopThree ? _podiumColor(entry.rank) : _border,
+              ),
+            ),
+            child: Center(
+              child: Text(
+                '${entry.rank}',
+                style: TextStyle(
+                  color: isTopThree ? _podiumColor(entry.rank) : _text,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 14),
           Expanded(
-            child: Text(
-              entry.isCurrentUser ? '${entry.playerName} (You)' : entry.playerName,
-              style: TextStyle(
-                color: textColor,
-                fontSize: 17,
-                fontWeight: entry.isCurrentUser ? FontWeight.w800 : FontWeight.w600,
-              ),
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  entry.name,
+                  style: TextStyle(
+                    color: _text,
+                    fontSize: 15,
+                    fontWeight:
+                        highlight ? FontWeight.w900 : FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  highlight ? 'You' : 'Worldwide athlete',
+                  style: const TextStyle(
+                    color: _muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 12),
-          Text(
-            _formatNumber(entry.score),
-            style: TextStyle(
-              color: textColor,
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-            ),
+          Row(
+            children: [
+              Icon(
+                _categoryIcon(_selectedCategory),
+                color: isTopThree ? _podiumColor(entry.rank) : _accent,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${entry.score}',
+                style: const TextStyle(
+                  color: _text,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -669,167 +781,61 @@ class _LeaderboardRow extends StatelessWidget {
   }
 }
 
-class _RankBadge extends StatelessWidget {
+class _RankingEntry {
   final int rank;
+  final String name;
+  final int score;
+  final bool isCurrentUser;
 
-  const _RankBadge({required this.rank});
+  const _RankingEntry({
+    this.rank = 0,
+    required this.name,
+    required this.score,
+    required this.isCurrentUser,
+  });
 
-  @override
-  Widget build(BuildContext context) {
-    if (rank <= 3) {
-      final medal = switch (rank) {
-        1 => '🥇',
-        2 => '🥈',
-        _ => '🥉',
-      };
-
-      return Text(
-        medal,
-        textAlign: TextAlign.center,
-        style: const TextStyle(fontSize: 24),
-      );
-    }
-
-    return Text(
-      '$rank.',
-      textAlign: TextAlign.center,
-      style: const TextStyle(
-        color: Color(0xFFCBD5E1),
-        fontWeight: FontWeight.w700,
-        fontSize: 16,
-      ),
+  _RankingEntry copyWith({
+    int? rank,
+    String? name,
+    int? score,
+    bool? isCurrentUser,
+  }) {
+    return _RankingEntry(
+      rank: rank ?? this.rank,
+      name: name ?? this.name,
+      score: score ?? this.score,
+      isCurrentUser: isCurrentUser ?? this.isCurrentUser,
     );
   }
 }
 
-class _YourRankingsCard extends StatelessWidget {
-  final PersonalRankingsSummary summary;
+class _TopCircleButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
 
-  const _YourRankingsCard({required this.summary});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111827),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFF1F2937)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Your Rankings',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 18),
-          ...RankingCategory.values.map((category) {
-            final entry = summary.rankings[category];
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      category.label,
-                      style: const TextStyle(
-                        color: Color(0xFFE5E7EB),
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    entry != null ? '#${entry.rank}' : '—',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }),
-        ],
-      ),
-    );
-  }
-}
-
-class _LoadingCard extends StatelessWidget {
-  const _LoadingCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 220,
-      decoration: BoxDecoration(
-        color: const Color(0xFF111827),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFF1F2937)),
-      ),
-      child: const Center(
-        child: CircularProgressIndicator(
-          color: Color(0xFF06B6D4),
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorCard extends StatelessWidget {
-  final String message;
-  final Future<void> Function({bool showRefreshState}) onRetry;
-
-  const _ErrorCard({
-    required this.message,
-    required this.onRetry,
+  const _TopCircleButton({
+    required this.icon,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111827),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFF7F1D1D)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Something went wrong',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-              fontSize: 18,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            message,
-            style: const TextStyle(
-              color: Color(0xFFCBD5E1),
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(height: 14),
-          ElevatedButton(
-            onPressed: () => onRetry(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF06B6D4),
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Retry'),
-          ),
-        ],
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: Ink(
+        width: 46,
+        height: 46,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E293B),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF334155)),
+        ),
+        child: Icon(
+          icon,
+          color: Colors.white,
+          size: 22,
+        ),
       ),
     );
   }
