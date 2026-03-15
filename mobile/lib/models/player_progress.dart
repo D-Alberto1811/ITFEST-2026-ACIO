@@ -6,6 +6,10 @@ class PlayerProgress {
   final int xpForNext;
   final int gems;
   final int streakDays;
+  final int totalPushups;
+  final int totalSquats;
+  final int totalJumpingJacks;
+  final String? lastStreakDate;
   final String updatedAt;
 
   const PlayerProgress({
@@ -16,6 +20,10 @@ class PlayerProgress {
     required this.xpForNext,
     required this.gems,
     required this.streakDays,
+    required this.totalPushups,
+    required this.totalSquats,
+    required this.totalJumpingJacks,
+    required this.lastStreakDate,
     required this.updatedAt,
   });
 
@@ -28,6 +36,10 @@ class PlayerProgress {
       xpForNext: 100,
       gems: 0,
       streakDays: 0,
+      totalPushups: 0,
+      totalSquats: 0,
+      totalJumpingJacks: 0,
+      lastStreakDate: null,
       updatedAt: DateTime.now().toIso8601String(),
     );
   }
@@ -41,6 +53,10 @@ class PlayerProgress {
       'xp_for_next': xpForNext,
       'gems': gems,
       'streak_days': streakDays,
+      'total_pushups': totalPushups,
+      'total_squats': totalSquats,
+      'total_jumping_jacks': totalJumpingJacks,
+      'last_streak_date': lastStreakDate,
       'updated_at': updatedAt,
     };
   }
@@ -54,7 +70,13 @@ class PlayerProgress {
       xpForNext: (map['xp_for_next'] as num?)?.toInt() ?? 100,
       gems: (map['gems'] as num?)?.toInt() ?? 0,
       streakDays: (map['streak_days'] as num?)?.toInt() ?? 0,
-      updatedAt: map['updated_at'] as String? ?? '',
+      totalPushups: (map['total_pushups'] as num?)?.toInt() ?? 0,
+      totalSquats: (map['total_squats'] as num?)?.toInt() ?? 0,
+      totalJumpingJacks:
+          (map['total_jumping_jacks'] as num?)?.toInt() ?? 0,
+      lastStreakDate: map['last_streak_date'] as String?,
+      updatedAt: map['updated_at'] as String? ??
+          DateTime.now().toIso8601String(),
     );
   }
 
@@ -66,6 +88,10 @@ class PlayerProgress {
     int? xpForNext,
     int? gems,
     int? streakDays,
+    int? totalPushups,
+    int? totalSquats,
+    int? totalJumpingJacks,
+    String? lastStreakDate,
     String? updatedAt,
   }) {
     return PlayerProgress(
@@ -76,6 +102,10 @@ class PlayerProgress {
       xpForNext: xpForNext ?? this.xpForNext,
       gems: gems ?? this.gems,
       streakDays: streakDays ?? this.streakDays,
+      totalPushups: totalPushups ?? this.totalPushups,
+      totalSquats: totalSquats ?? this.totalSquats,
+      totalJumpingJacks: totalJumpingJacks ?? this.totalJumpingJacks,
+      lastStreakDate: lastStreakDate ?? this.lastStreakDate,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }

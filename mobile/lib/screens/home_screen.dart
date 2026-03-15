@@ -16,6 +16,7 @@ import 'login_screen.dart';
 import 'path_screen.dart';
 import 'profile_screen.dart';
 import 'workout_screen.dart';
+import 'worldwide_rankings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -37,6 +38,11 @@ class _HomeScreenState extends State<HomeScreen> {
   int gems = 0;
   int streakDays = 0;
 
+  int totalPushups = 0;
+  int totalSquats = 0;
+  int totalJumpingJacks = 0;
+  String? lastStreakDate;
+
   Set<int> completedQuestIds = <int>{};
 
   late final List<Quest> _pathQuests = buildPathQuests();
@@ -54,11 +60,17 @@ class _HomeScreenState extends State<HomeScreen> {
       final user = await AuthService.instance.getCurrentUser();
 
       if (user != null) {
+        final localProgress =
+            await LocalStorageService.instance.getOrCreateProgress(user.id!);
+        final localQuestIds =
+            await LocalStorageService.instance.getCompletedQuestIds(user.id!);
+
         final isServer = await AuthService.instance.isServerSession();
         if (isServer) {
           final token = await AuthService.instance.getToken();
           if (token != null) {
             final progressRes = await ApiClient.getProgress(token);
+
             if (progressRes != null && mounted) {
               setState(() {
                 _currentUser = user;
@@ -69,12 +81,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 gems = progressRes.gems;
                 streakDays = progressRes.streakDays;
                 completedQuestIds = progressRes.completedQuestIds.toSet();
+
+                // Păstrăm totalurile locale pentru achievements
+                totalPushups = localProgress.totalPushups;
+                totalSquats = localProgress.totalSquats;
+                totalJumpingJacks = localProgress.totalJumpingJacks;
+                lastStreakDate = localProgress.lastStreakDate;
+
                 _isLoadingUser = false;
               });
               return;
             }
           }
         }
+
         final progress =
             await LocalStorageService.instance.getOrCreateProgress(user.id!);
         final questIds =
@@ -84,13 +104,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
         setState(() {
           _currentUser = user;
-          level = progress.level;
-          xp = progress.xp;
-          totalXp = progress.totalXp;
-          xpForNext = progress.xpForNext;
-          gems = progress.gems;
-          streakDays = progress.streakDays;
-          completedQuestIds = questIds;
+          level = localProgress.level;
+          xp = localProgress.xp;
+          totalXp = localProgress.totalXp;
+          xpForNext = localProgress.xpForNext;
+          gems = localProgress.gems;
+          streakDays = localProgress.streakDays;
+          completedQuestIds = localQuestIds;
+          totalPushups = localProgress.totalPushups;
+          totalSquats = localProgress.totalSquats;
+          totalJumpingJacks = localProgress.totalJumpingJacks;
+          lastStreakDate = localProgress.lastStreakDate;
           _isLoadingUser = false;
         });
         return;
@@ -118,10 +142,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _saveProgress() async {
-    final isServer = await AuthService.instance.isServerSession();
-    if (isServer) return;
     final user = _currentUser;
     if (user == null || user.id == null) return;
+
     final progress = PlayerProgress(
       userId: user.id!,
       level: level,
@@ -130,9 +153,66 @@ class _HomeScreenState extends State<HomeScreen> {
       xpForNext: xpForNext,
       gems: gems,
       streakDays: streakDays,
+      totalPushups: totalPushups,
+      totalSquats: totalSquats,
+      totalJumpingJacks: totalJumpingJacks,
+      lastStreakDate: lastStreakDate,
       updatedAt: DateTime.now().toIso8601String(),
     );
+
     await LocalStorageService.instance.saveProgress(progress);
+  }
+
+  void _applyExerciseTotals(Quest quest) {
+    switch (quest.type) {
+      case 'pushup':
+        totalPushups += quest.target;
+        break;
+      case 'squat':
+        totalSquats += quest.target;
+        break;
+      case 'jumping_jack':
+        totalJumpingJacks += quest.target;
+        break;
+    }
+  }
+
+  String _normalizeDate(DateTime date) {
+    return DateTime(date.year, date.month, date.day).toIso8601String();
+  }
+
+  void _updateDailyStreak() {
+    final todayKey = _normalizeDate(DateTime.now());
+
+    if (lastStreakDate == null) {
+      streakDays = 1;
+      lastStreakDate = todayKey;
+      return;
+    }
+
+    final parsed = DateTime.tryParse(lastStreakDate!);
+    if (parsed == null) {
+      streakDays = 1;
+      lastStreakDate = todayKey;
+      return;
+    }
+
+    final lastDay = DateTime(parsed.year, parsed.month, parsed.day);
+    final today = DateTime.now();
+    final todayDay = DateTime(today.year, today.month, today.day);
+    final difference = todayDay.difference(lastDay).inDays;
+
+    if (difference <= 0) {
+      return;
+    }
+
+    if (difference == 1) {
+      streakDays += 1;
+    } else {
+      streakDays = 1;
+    }
+
+    lastStreakDate = todayKey;
   }
 
   Future<void> _onQuestComplete(Quest quest) async {
@@ -150,6 +230,7 @@ class _HomeScreenState extends State<HomeScreen> {
           repsCompleted: quest.target,
           difficulty: quest.difficulty ?? 'beginner',
         );
+
         if (res != null && mounted) {
           setState(() {
             level = res.level;
@@ -158,8 +239,18 @@ class _HomeScreenState extends State<HomeScreen> {
             xpForNext = res.xpForNext;
             gems = res.gems;
             streakDays = res.streakDays;
+
+            _applyExerciseTotals(quest);
+            lastStreakDate = _normalizeDate(DateTime.now());
+
             completedQuestIds.add(quest.id);
           });
+
+          await LocalStorageService.instance.markQuestCompleted(
+            _currentUser!.id!,
+            quest.id,
+          );
+          await _saveProgress();
         }
         return;
       }
@@ -169,12 +260,15 @@ class _HomeScreenState extends State<HomeScreen> {
       xp += quest.rewardXp;
       totalXp += quest.rewardXp;
       gems += quest.rewardGems;
+
       while (xp >= xpForNext) {
         xp -= xpForNext;
         level++;
         xpForNext = (xpForNext * 1.5).toInt();
       }
-      streakDays += 1;
+
+      _applyExerciseTotals(quest);
+      _updateDailyStreak();
       completedQuestIds.add(quest.id);
     });
 
@@ -188,6 +282,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openProfile() {
     final user = _currentUser;
     if (user == null) return;
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -206,6 +301,25 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => WorkoutScreen(
           quest: quest,
           onComplete: () => _onQuestComplete(quest),
+        ),
+      ),
+    );
+  }
+
+  void _openWorldwideRankings() {
+    final user = _currentUser;
+    if (user == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WorldwideRankingsScreen(
+          user: user,
+          currentUserExerciseTotals: const {
+            RankingCategory.pushUps: 2140,
+            RankingCategory.squats: 4910,
+            RankingCategory.jumpingJacks: 1650,
+          },
         ),
       ),
     );
@@ -242,6 +356,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     streakDays: streakDays,
                     gems: gems,
                     onProfileTap: _openProfile,
+                  ),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: ElevatedButton(
+                      onPressed: _openWorldwideRankings,
+                      child: const Text('Worldwide Rankings'),
+                    ),
                   ),
                   const SizedBox(height: 20),
                   if (_selectedTabIndex == 0) ...[
