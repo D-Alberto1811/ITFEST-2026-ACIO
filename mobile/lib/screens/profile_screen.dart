@@ -117,7 +117,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ? localProgress.totalDailyChallengesCompleted
                         : res.completedQuestIds
                             .where((questId) =>
-                                dailyQuests.any((quest) => quest.id == questId))
+                                buildDailyQuestsForUser(userId: widget.user.id ?? 0).any((quest) => quest.id == questId))
                             .length,
                 lastStreakDate: localProgress.lastStreakDate,
                 updatedAt: DateTime.now().toIso8601String(),
@@ -145,7 +145,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ? localProgress.totalDailyChallengesCompleted
                   : localCompleted
                       .where((questId) =>
-                          dailyQuests.any((quest) => quest.id == questId))
+                          buildDailyQuestsForUser(userId: widget.user.id ?? 0).any((quest) => quest.id == questId))
                       .length,
         );
         _completedQuestIds = localCompleted;

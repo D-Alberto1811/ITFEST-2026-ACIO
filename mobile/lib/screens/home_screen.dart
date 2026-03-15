@@ -19,6 +19,7 @@ import '../widgets/home/home_daily_quests_tab.dart';
 import '../widgets/home/home_hero_card.dart';
 import '../widgets/home/home_section_headers.dart';
 import 'path_screen.dart';
+import 'exercise_tutorial_screen.dart';
 import 'profile_screen.dart';
 import 'stretching_screen.dart';
 import 'workout_screen.dart';
@@ -1171,26 +1172,24 @@ class _HomeBottomDock extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: _DockTabButton(
-              icon: Icons.today_rounded,
-              label: 'Daily',
+            child: _DockIconButton(
+              icon: Icons.flag_rounded,
               isSelected: selectedIndex == 0,
               onTap: () => onTabSelected(0),
+              selectedBorderColor: const Color(0xFF06B6D4),
+              selectedIconColor: const Color(0xFF06B6D4),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Expanded(
-            child: _DockTabButton(
-              icon: Icons.route_rounded,
-              label: 'Path',
+            child: _DockIconButton(
+              icon: Icons.alt_route_rounded,
               isSelected: selectedIndex == 1,
               onTap: () => onTabSelected(1),
+              selectedBorderColor: const Color(0xFF06B6D4),
+              selectedIconColor: const Color(0xFF06B6D4),
             ),
           ),
-          const SizedBox(width: 8),
-          _DockCircleButton(
-            icon: Icons.emoji_events_rounded,
-            onTap: onLeaderboardTap,
           const SizedBox(width: 10),
           Expanded(
             child: _DockIconButton(
@@ -1217,79 +1216,39 @@ class _HomeBottomDock extends StatelessWidget {
   }
 }
 
-class _DockTabButton extends StatelessWidget {
+class _DockIconButton extends StatelessWidget {
   final IconData icon;
-  final String label;
   final bool isSelected;
   final VoidCallback onTap;
+  final Color selectedBorderColor;
+  final Color selectedIconColor;
 
-  const _DockTabButton({
+  const _DockIconButton({
     required this.icon,
-    required this.label,
     required this.isSelected,
     required this.onTap,
+    required this.selectedBorderColor,
+    required this.selectedIconColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    final Color bgColor =
-        isSelected ? const Color(0xFF06B6D4) : const Color(0xFF1F2937);
-    final Color fgColor = isSelected ? const Color(0xFF0F172A) : Colors.white;
-
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        height: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: fgColor, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: fgColor,
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DockCircleButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _DockCircleButton({
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 58,
-        height: double.infinity,
-        decoration: BoxDecoration(
-          color: const Color(0xFF1F2937),
-          borderRadius: BorderRadius.circular(18),
+          color: isSelected ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? selectedBorderColor : const Color(0xFF334155),
+          ),
         ),
         child: Icon(
           icon,
-          color: Colors.white,
-          size: 24,
+          color: isSelected ? selectedIconColor : const Color(0xFF94A3B8),
+          size: 22,
         ),
       ),
     );
