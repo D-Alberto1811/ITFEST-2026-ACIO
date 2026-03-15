@@ -181,6 +181,9 @@ class _AchievementGridCard extends StatelessWidget {
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
                 color: isUnlocked ? Colors.white : const Color(0xFF94A3B8),
+                color: isUnlocked
+                    ? const Color(0xFF3C3C3C)
+                    : const Color(0xFF7A7A7A),
               ),
             ),
           ),
