@@ -16,6 +16,7 @@ import 'login_screen.dart';
 import 'path_screen.dart';
 import 'profile_screen.dart';
 import 'workout_screen.dart';
+import 'worldwide_rankings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -93,6 +94,11 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           }
         }
+
+        final progress =
+            await LocalStorageService.instance.getOrCreateProgress(user.id!);
+        final questIds =
+            await LocalStorageService.instance.getCompletedQuestIds(user.id!);
 
         if (!mounted) return;
 
@@ -300,6 +306,25 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _openWorldwideRankings() {
+    final user = _currentUser;
+    if (user == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WorldwideRankingsScreen(
+          user: user,
+          currentUserExerciseTotals: const {
+            RankingCategory.pushUps: 2140,
+            RankingCategory.squats: 4910,
+            RankingCategory.jumpingJacks: 1650,
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoadingUser) {
@@ -331,6 +356,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     streakDays: streakDays,
                     gems: gems,
                     onProfileTap: _openProfile,
+                  ),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: ElevatedButton(
+                      onPressed: _openWorldwideRankings,
+                      child: const Text('Worldwide Rankings'),
+                    ),
                   ),
                   const SizedBox(height: 20),
                   if (_selectedTabIndex == 0) ...[
