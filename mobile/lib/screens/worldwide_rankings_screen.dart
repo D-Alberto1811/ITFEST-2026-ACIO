@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -678,29 +678,30 @@ class _LeaderboardRow extends StatelessWidget {
                   : entry.playerName,
               style: TextStyle(
                 color: textColor,
-                fontSize: 17,
+                fontSize: 14,
                 fontWeight:
                     entry.isCurrentUser ? FontWeight.w800 : FontWeight.w600,
               ),
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 categoryIcon,
-                size: 18,
+                size: 16,
                 color: entry.rank <= 3
                     ? podiumColor(entry.rank)
                     : const Color(0xFF06B6D4),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Text(
                 _formatNumber(entry.score),
                 style: TextStyle(
                   color: textColor,
-                  fontSize: 17,
+                  fontSize: 14,
                   fontWeight: FontWeight.w800,
                 ),
               ),
