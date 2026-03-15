@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../models/quest.dart';
 import '../../services/auth_service.dart';
@@ -49,6 +50,7 @@ class _WorkoutBaseScreenState extends State<WorkoutBaseScreen> {
   @override
   void initState() {
     super.initState();
+    WakelockPlus.enable();
     _counter = ExerciseCounter(
       type: widget.exerciseType,
       target: widget.quest.target,
@@ -268,6 +270,7 @@ class _WorkoutBaseScreenState extends State<WorkoutBaseScreen> {
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     _controller?.stopImageStream();
     _controller?.dispose();
     _poseService?.dispose();
