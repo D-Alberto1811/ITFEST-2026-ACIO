@@ -38,15 +38,15 @@ class ExerciseCounter {
   String get gradeLabel {
     switch (sessionGrade) {
       case SessionGrade.A:
-        return 'A - Formă excelentă!';
+        return 'A - Excellent form!';
       case SessionGrade.B:
-        return 'B - Foarte bine!';
+        return 'B - Great job!';
       case SessionGrade.C:
-        return 'C - Bine, continuă!';
+        return 'C - Good, keep going!';
       case SessionGrade.D:
-        return 'D - Mai poți îmbunătăți';
+        return 'D - Room to improve';
       case SessionGrade.E:
-        return 'E - Exersează forma';
+        return 'E - Focus on your form';
     }
   }
 
@@ -72,7 +72,32 @@ class ExerciseCounter {
     return angle > 180 ? 360 - angle : angle;
   }
 
+  /// Verifică dacă corpul e orizontal (planșă) față de cameră.
+  /// Dacă persoana stă în picioare, umeri și șolduri sunt pe verticală → nu numără flotări.
+  bool _isBodyHorizontalForPushup(Pose pose) {
+    final leftShoulder = pose.landmarks[PoseLandmarkType.leftShoulder];
+    final rightShoulder = pose.landmarks[PoseLandmarkType.rightShoulder];
+    final leftHip = pose.landmarks[PoseLandmarkType.leftHip];
+    final rightHip = pose.landmarks[PoseLandmarkType.rightHip];
+    if (leftShoulder == null || rightShoulder == null || leftHip == null || rightHip == null) return false;
+    if ((leftShoulder.likelihood ?? 0) < 0.5 || (rightShoulder.likelihood ?? 0) < 0.5) return false;
+    if ((leftHip.likelihood ?? 0) < 0.5 || (rightHip.likelihood ?? 0) < 0.5) return false;
+
+    final shoulderY = (leftShoulder.y + rightShoulder.y) / 2;
+    final hipY = (leftHip.y + rightHip.y) / 2;
+    final shoulderX = (leftShoulder.x + rightShoulder.x) / 2;
+    final hipX = (leftHip.x + rightHip.x) / 2;
+    final dy = hipY - shoulderY;
+    final dx = hipX - shoulderX;
+    final torsoAngleDeg = atan2(dy, dx) * 180 / pi;
+    // Corp orizontal: unghiul torso față de orizontală aproape 0° sau 180°
+    final absAngle = torsoAngleDeg.abs();
+    return absAngle < 40 || absAngle > 140;
+  }
+
   void _processPushup(Pose pose) {
+    if (!_isBodyHorizontalForPushup(pose)) return;
+
     final leftShoulder = pose.landmarks[PoseLandmarkType.leftShoulder];
     final leftElbow = pose.landmarks[PoseLandmarkType.leftElbow];
     final leftWrist = pose.landmarks[PoseLandmarkType.leftWrist];
