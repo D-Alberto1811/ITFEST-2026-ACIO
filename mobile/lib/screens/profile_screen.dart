@@ -435,7 +435,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       icon: Icons.visibility_outlined,
                       iconColor: _gold,
                       title: 'Workout posture overlay',
-                      subtitle: 'Show guide lines and points during exercise detection',
+                      subtitle:
+                          'Show guide lines and points during exercise detection',
                       value: _exerciseOverlayEnabled,
                       onChanged: (value) async {
                         setState(() {
@@ -1258,7 +1259,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 18),
           SizedBox(
-            height: 150,
+            height: 182,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: previewAchievements.length,
@@ -1284,7 +1285,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final isUnlocked = achievement.isUnlocked(progress);
 
     return Container(
-      width: 120,
+      width: 128,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: isUnlocked ? _card : const Color(0xFF172033),
@@ -1296,38 +1297,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Column(
         children: [
           SizedBox(
-            height: 60,
+            height: 64,
             child: Center(
               child: AchievementIcon(
                 iconPath: achievement.iconPath,
                 isUnlocked: isUnlocked,
-                size: 60,
+                size: 58,
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            achievement.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              color: isUnlocked ? _text : _muted,
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: Text(
+              achievement.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: isUnlocked ? _text : _muted,
+              ),
             ),
           ),
           const SizedBox(height: 6),
-          Text(
-            isUnlocked ? 'Unlocked' : achievement.description,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 11,
-              height: 1.2,
-              color: _muted,
-              fontWeight: FontWeight.w600,
+          Expanded(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Text(
+                isUnlocked ? 'Unlocked' : achievement.description,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 11,
+                  height: 1.2,
+                  color: _muted,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ),
         ],
