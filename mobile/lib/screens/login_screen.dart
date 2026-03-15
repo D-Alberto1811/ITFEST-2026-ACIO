@@ -169,13 +169,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
+                      SizedBox(
+                        height: 110,
+                        width: 180,
                         child: Image.asset(
                           'assets/images/logo.png',
-                          height: 88,
-                          width: 88,
-                          fit: BoxFit.cover,
+                          fit: BoxFit.contain,
                         ),
                       ),
                       const SizedBox(height: 18),
