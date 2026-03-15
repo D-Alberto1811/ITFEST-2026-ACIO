@@ -160,34 +160,30 @@ class _AchievementGridCard extends StatelessWidget {
         children: [
           Center(
             child: Container(
-              width: 68,
-              height: 68,
-              decoration: BoxDecoration(
-                color: isUnlocked
-                    ? const Color(0xFFFFF3BF)
-                    : const Color(0xFFE7E7E7),
-                shape: BoxShape.circle,
-              ),
               child: Center(
                 child: AchievementIcon(
                   iconPath: achievement.iconPath,
                   isUnlocked: isUnlocked,
-                  size: 42,
+                  size: 90,
                 ),
               ),
             ),
           ),
           const SizedBox(height: 12),
-          Text(
-            achievement.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              color: isUnlocked
-                  ? const Color(0xFF3C3C3C)
-                  : const Color(0xFF7A7A7A),
+          SizedBox(
+            width: double.infinity,
+            child: Text(
+              achievement.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: isUnlocked
+                    ? const Color(0xFF3C3C3C)
+                    : const Color(0xFF7A7A7A),
+              ),
             ),
           ),
           const SizedBox(height: 6),

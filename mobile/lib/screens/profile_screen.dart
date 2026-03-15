@@ -546,19 +546,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Column(
         children: [
           Container(
-            width: 58,
-            height: 58,
-            decoration: BoxDecoration(
-              color: isUnlocked
-                  ? const Color(0xFFFFF3BF)
-                  : const Color(0xFFE7E7E7),
-              shape: BoxShape.circle,
-            ),
             child: Center(
               child: AchievementIcon(
                 iconPath: achievement.iconPath,
                 isUnlocked: isUnlocked,
-                size: 34,
+                size: 60,
               ),
             ),
           ),
