@@ -1,29 +1,28 @@
-import 'package:flutter/material.dart';
+﻿import 'dart:convert';
 
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+
+import '../config/api_config.dart';
 import '../config/storage_config.dart';
 import '../models/app_user.dart';
+import '../models/player_progress.dart';
+import '../services/auth_service.dart';
+import '../services/database_service.dart';
 
-/// Worldwide rankings screen inspired by the attached mockup:
-/// - title + subtitle
-/// - 3 tabs: Push-Ups / Squats / Jumping Jacks
-/// - top 10 visible immediately
-/// - current user shown under the leaderboard when outside top 10
-/// - secondary card: user's ranking across all exercises
-///
-/// This file is intentionally self-contained so it can be dropped into
-/// `mobile/lib/screens/worldwide_rankings_screen.dart`.
-///
-/// Current behavior:
-/// - In SQLite mode, the screen uses a local seeded repository.
-/// - In server mode, the repository is already abstracted and can be swapped
-///   with real API calls without changing the UI.
+enum RankingCategory {
+  pushUps('Push-Ups', 'pushups'),
+  squats('Squats', 'squats'),
+  jumpingJacks('Jumping Jacks', 'jumping_jacks');
+
+  final String label;
+  final String apiKey;
+
+  const RankingCategory(this.label, this.apiKey);
+}
+
 class WorldwideRankingsScreen extends StatefulWidget {
   final AppUser user;
-
-  /// Optional local stats for the current user.
-  ///
-  /// If not provided, the screen falls back to demo values that match the
-  /// mocked leaderboard behavior.
   final Map<RankingCategory, int>? currentUserExerciseTotals;
 
   const WorldwideRankingsScreen({
@@ -38,13 +37,14 @@ class WorldwideRankingsScreen extends StatefulWidget {
 }
 
 class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
-  late final RankingsRepository _repository;
-
   bool _isLoading = true;
   bool _isRefreshing = false;
   String? _error;
 
   RankingCategory _selectedCategory = RankingCategory.pushUps;
+
+  late final RankingsRepository _repository;
+
   LeaderboardSnapshot? _snapshot;
   PersonalRankingsSummary? _personalSummary;
 
@@ -52,8 +52,11 @@ class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
   void initState() {
     super.initState();
     _repository = isServerMode
-        ? _ServerRankingsRepository()
-        : _LocalSeededRankingsRepository(
+        ? _ServerRankingsRepository(
+            currentUser: widget.user,
+            currentUserTotals: widget.currentUserExerciseTotals,
+          )
+        : _SqliteRankingsRepository(
             currentUser: widget.user,
             currentUserTotals: widget.currentUserExerciseTotals,
           );
@@ -65,10 +68,15 @@ class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
       setState(() {
         _isRefreshing = true;
       });
+    } else {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
     }
 
     try {
-      final results = await Future.wait([
+      final results = await Future.wait<dynamic>([
         _repository.getLeaderboard(_selectedCategory),
         _repository.getPersonalSummary(),
       ]);
@@ -84,8 +92,9 @@ class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+
       setState(() {
-        _error = 'Could not load worldwide rankings right now.';
+        _error = e.toString().replaceFirst('Exception: ', '');
         _isLoading = false;
         _isRefreshing = false;
       });
@@ -111,6 +120,7 @@ class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF0F172A),
         elevation: 0,
+        centerTitle: true,
         title: const Text(
           'Worldwide Rankings',
           style: TextStyle(fontWeight: FontWeight.w800),
@@ -162,17 +172,6 @@ class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
   }
 }
 
-enum RankingCategory {
-  pushUps('Push-Ups', 'pushups'),
-  squats('Squats', 'squats'),
-  jumpingJacks('Jumping Jacks', 'jumping_jacks');
-
-  final String label;
-  final String apiKey;
-
-  const RankingCategory(this.label, this.apiKey);
-}
-
 class LeaderboardEntry {
   final int rank;
   final String playerName;
@@ -183,7 +182,7 @@ class LeaderboardEntry {
     required this.rank,
     required this.playerName,
     required this.score,
-    this.isCurrentUser = false,
+    required this.isCurrentUser,
   });
 }
 
@@ -198,18 +197,21 @@ class LeaderboardSnapshot {
     required this.currentUserEntry,
   });
 
-  bool get isCurrentUserInTopTen =>
-      topEntries.any((entry) => entry.isCurrentUser || entry.rank == currentUserEntry.rank);
+  bool get isCurrentUserInTopTen {
+    return topEntries.any((entry) => entry.isCurrentUser);
+  }
 
   LeaderboardEntry? get previousEntry {
     if (currentUserEntry.rank <= 1) return null;
 
-    final List<LeaderboardEntry> pool = <LeaderboardEntry>[
-      ...topEntries,
-      currentUserEntry,
-    ]..sort((a, b) => a.rank.compareTo(b.rank));
+    final all = [...topEntries];
+    if (!all.any((e) => e.rank == currentUserEntry.rank)) {
+      all.add(currentUserEntry);
+    }
 
-    for (final entry in pool) {
+    all.sort((a, b) => a.rank.compareTo(b.rank));
+
+    for (final entry in all) {
       if (entry.rank == currentUserEntry.rank - 1) {
         return entry;
       }
@@ -235,283 +237,244 @@ class PersonalRankingsSummary {
 
 abstract class RankingsRepository {
   Future<LeaderboardSnapshot> getLeaderboard(RankingCategory category);
-
   Future<PersonalRankingsSummary> getPersonalSummary();
 }
 
-class _LocalSeededRankingsRepository implements RankingsRepository {
+class _SqliteRankingsRepository implements RankingsRepository {
   final AppUser currentUser;
   final Map<RankingCategory, int>? currentUserTotals;
 
-  _LocalSeededRankingsRepository({
+  _SqliteRankingsRepository({
     required this.currentUser,
     this.currentUserTotals,
   });
 
-  static const Map<RankingCategory, List<_SeedLeaderboardRow>> _seedRows = {
-    RankingCategory.pushUps: [
-      _SeedLeaderboardRow('Alex', 12540),
-      _SeedLeaderboardRow('Maria', 11980),
-      _SeedLeaderboardRow('Daniel', 11410),
-      _SeedLeaderboardRow('Sophie', 10920),
-      _SeedLeaderboardRow('David', 10500),
-      _SeedLeaderboardRow('Emma', 10210),
-      _SeedLeaderboardRow('Leo', 9980),
-      _SeedLeaderboardRow('Mia', 9730),
-      _SeedLeaderboardRow('Noah', 9410),
-      _SeedLeaderboardRow('Sara', 9180),
-      _SeedLeaderboardRow('Iris', 9000),
-      _SeedLeaderboardRow('Luca', 8830),
-      _SeedLeaderboardRow('Anya', 8610),
-      _SeedLeaderboardRow('Mateo', 8420),
-      _SeedLeaderboardRow('Ava', 8280),
-      _SeedLeaderboardRow('Victor', 8050),
-      _SeedLeaderboardRow('Ethan', 7810),
-      _SeedLeaderboardRow('Nina', 7600),
-      _SeedLeaderboardRow('Julia', 7380),
-      _SeedLeaderboardRow('Mark', 7210),
-      _SeedLeaderboardRow('Elena', 7070),
-      _SeedLeaderboardRow('Sebastian', 6940),
-      _SeedLeaderboardRow('Daria', 6810),
-      _SeedLeaderboardRow('Paul', 6680),
-      _SeedLeaderboardRow('Olivia', 6520),
-      _SeedLeaderboardRow('Radu', 6380),
-      _SeedLeaderboardRow('Eva', 6240),
-      _SeedLeaderboardRow('Teo', 6090),
-      _SeedLeaderboardRow('Amelia', 5930),
-      _SeedLeaderboardRow('Tudor', 5780),
-      _SeedLeaderboardRow('Bianca', 5600),
-      _SeedLeaderboardRow('Cora', 5450),
-      _SeedLeaderboardRow('Andrei', 5230),
-      _SeedLeaderboardRow('Diana', 5010),
-      _SeedLeaderboardRow('Kian', 4870),
-      _SeedLeaderboardRow('Lara', 4720),
-      _SeedLeaderboardRow('Maya', 4560),
-      _SeedLeaderboardRow('Nora', 4420),
-      _SeedLeaderboardRow('Oscar', 4270),
-      _SeedLeaderboardRow('Petra', 4160),
-      _SeedLeaderboardRow('Quinn', 4030),
-      _SeedLeaderboardRow('Roxana', 3920),
-      _SeedLeaderboardRow('Stefan', 3810),
-      _SeedLeaderboardRow('Tania', 3690),
-      _SeedLeaderboardRow('Ugo', 3550),
-      _SeedLeaderboardRow('Vera', 3400),
-      _SeedLeaderboardRow('Wade', 3280),
-      _SeedLeaderboardRow('Xenia', 3170),
-      _SeedLeaderboardRow('Yara', 3050),
-      _SeedLeaderboardRow('Zane', 2920),
-      _SeedLeaderboardRow('Ada', 2800),
-      _SeedLeaderboardRow('Ben', 2690),
-      _SeedLeaderboardRow('Clara', 2580),
-      _SeedLeaderboardRow('Denis', 2470),
-      _SeedLeaderboardRow('Erin', 2360),
-      _SeedLeaderboardRow('Fabian', 2240),
-    ],
-    RankingCategory.squats: [
-      _SeedLeaderboardRow('Mara', 14220),
-      _SeedLeaderboardRow('Chris', 13890),
-      _SeedLeaderboardRow('Eva', 13210),
-      _SeedLeaderboardRow('Luca', 12650),
-      _SeedLeaderboardRow('Nadia', 12140),
-      _SeedLeaderboardRow('Owen', 11780),
-      _SeedLeaderboardRow('Petra', 11300),
-      _SeedLeaderboardRow('Ryan', 10890),
-      _SeedLeaderboardRow('Sonia', 10320),
-      _SeedLeaderboardRow('Toby', 9940),
-      _SeedLeaderboardRow('Uma', 9620),
-      _SeedLeaderboardRow('Vlad', 9310),
-      _SeedLeaderboardRow('Willa', 9020),
-      _SeedLeaderboardRow('Xander', 8740),
-      _SeedLeaderboardRow('Yuna', 8460),
-      _SeedLeaderboardRow('Zara', 8210),
-      _SeedLeaderboardRow('Alex', 7980),
-      _SeedLeaderboardRow('Bianca', 7700),
-      _SeedLeaderboardRow('Cezar', 7420),
-      _SeedLeaderboardRow('Dora', 7180),
-      _SeedLeaderboardRow('Eli', 6920),
-      _SeedLeaderboardRow('Faye', 6710),
-      _SeedLeaderboardRow('Gabi', 6510),
-      _SeedLeaderboardRow('Hugo', 6300),
-      _SeedLeaderboardRow('Ilinca', 6110),
-      _SeedLeaderboardRow('Jon', 5900),
-      _SeedLeaderboardRow('Kira', 5750),
-      _SeedLeaderboardRow('Lia', 5590),
-      _SeedLeaderboardRow('Mihai', 5430),
-      _SeedLeaderboardRow('Nora', 5280),
-      _SeedLeaderboardRow('Oana', 5140),
-      _SeedLeaderboardRow('Pavel', 4990),
-      _SeedLeaderboardRow('Ria', 4840),
-    ],
-    RankingCategory.jumpingJacks: [
-      _SeedLeaderboardRow('Kai', 16320),
-      _SeedLeaderboardRow('Lena', 15840),
-      _SeedLeaderboardRow('Milo', 15110),
-      _SeedLeaderboardRow('Nina', 14590),
-      _SeedLeaderboardRow('Omar', 14020),
-      _SeedLeaderboardRow('Pia', 13440),
-      _SeedLeaderboardRow('Quentin', 12810),
-      _SeedLeaderboardRow('Rina', 12170),
-      _SeedLeaderboardRow('Sven', 11720),
-      _SeedLeaderboardRow('Tara', 11230),
-      _SeedLeaderboardRow('Urs', 10910),
-      _SeedLeaderboardRow('Vio', 10580),
-      _SeedLeaderboardRow('Will', 10230),
-      _SeedLeaderboardRow('Ximena', 9930),
-      _SeedLeaderboardRow('Yosef', 9650),
-      _SeedLeaderboardRow('Zoe', 9410),
-      _SeedLeaderboardRow('Amir', 9180),
-      _SeedLeaderboardRow('Bella', 8960),
-      _SeedLeaderboardRow('Cian', 8740),
-      _SeedLeaderboardRow('Delia', 8530),
-      _SeedLeaderboardRow('Enzo', 8320),
-      _SeedLeaderboardRow('Flavia', 8100),
-      _SeedLeaderboardRow('Gus', 7900),
-      _SeedLeaderboardRow('Helga', 7720),
-      _SeedLeaderboardRow('Ivan', 7540),
-      _SeedLeaderboardRow('Jade', 7360),
-      _SeedLeaderboardRow('Kara', 7180),
-      _SeedLeaderboardRow('Lior', 6990),
-      _SeedLeaderboardRow('Mina', 6810),
-      _SeedLeaderboardRow('Nico', 6640),
-      _SeedLeaderboardRow('Orla', 6480),
-      _SeedLeaderboardRow('Pelin', 6320),
-      _SeedLeaderboardRow('Rafi', 6160),
-      _SeedLeaderboardRow('Sia', 6000),
-      _SeedLeaderboardRow('Toni', 5840),
-      _SeedLeaderboardRow('Una', 5690),
-      _SeedLeaderboardRow('Vik', 5530),
-      _SeedLeaderboardRow('Wren', 5370),
-      _SeedLeaderboardRow('Xavi', 5210),
-      _SeedLeaderboardRow('Yelena', 5050),
-      _SeedLeaderboardRow('Zed', 4890),
-      _SeedLeaderboardRow('Ana', 4740),
-      _SeedLeaderboardRow('Bogdan', 4580),
-      _SeedLeaderboardRow('Cami', 4420),
-      _SeedLeaderboardRow('Dinu', 4280),
-      _SeedLeaderboardRow('Ema', 4140),
-      _SeedLeaderboardRow('Filip', 4010),
-      _SeedLeaderboardRow('Geo', 3890),
-      _SeedLeaderboardRow('Hana', 3770),
-      _SeedLeaderboardRow('Ioan', 3650),
-      _SeedLeaderboardRow('Jana', 3540),
-      _SeedLeaderboardRow('Kris', 3430),
-      _SeedLeaderboardRow('Lory', 3320),
-      _SeedLeaderboardRow('Marius', 3210),
-      _SeedLeaderboardRow('Nela', 3100),
-      _SeedLeaderboardRow('Ovidiu', 2990),
-      _SeedLeaderboardRow('Paula', 2880),
-      _SeedLeaderboardRow('Rares', 2770),
-      _SeedLeaderboardRow('Simi', 2660),
-      _SeedLeaderboardRow('Teodora', 2550),
-      _SeedLeaderboardRow('Ula', 2440),
-      _SeedLeaderboardRow('Vasi', 2330),
-      _SeedLeaderboardRow('Wanda', 2220),
-      _SeedLeaderboardRow('Xenia', 2110),
-      _SeedLeaderboardRow('Yvo', 2000),
-      _SeedLeaderboardRow('Zina', 1890),
-      _SeedLeaderboardRow('Adel', 1780),
-      _SeedLeaderboardRow('Bruno', 1680),
-      _SeedLeaderboardRow('Cleo', 1580),
-      _SeedLeaderboardRow('Dora', 1480),
-      _SeedLeaderboardRow('Edi', 1380),
-      _SeedLeaderboardRow('Fani', 1280),
-      _SeedLeaderboardRow('Gina', 1180),
-      _SeedLeaderboardRow('Horia', 1080),
-      _SeedLeaderboardRow('Ilona', 980),
-      _SeedLeaderboardRow('Jeni', 880),
-      _SeedLeaderboardRow('Koko', 780),
-      _SeedLeaderboardRow('Luca', 680),
-    ],
-  };
-
-  static const Map<RankingCategory, int> _defaultCurrentUserTotals = {
-    RankingCategory.pushUps: 2140,
-    RankingCategory.squats: 4910,
-    RankingCategory.jumpingJacks: 1650,
-  };
+  final DatabaseService _database = DatabaseService.instance;
 
   @override
   Future<LeaderboardSnapshot> getLeaderboard(RankingCategory category) async {
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-
-    final currentUserScore =
-        currentUserTotals?[category] ?? _defaultCurrentUserTotals[category] ?? 0;
-
-    final generated = <_SeedLeaderboardRow>[
-      ...?_seedRows[category],
-      _SeedLeaderboardRow(_displayName, currentUserScore, isCurrentUser: true),
-    ]
-      ..sort((a, b) => b.score.compareTo(a.score));
-
+    final users = await _database.getAllUsers();
     final entries = <LeaderboardEntry>[];
-    for (var i = 0; i < generated.length; i++) {
-      final row = generated[i];
+
+    for (final user in users) {
+      if (user.id == null) continue;
+
+      final progress = await _database.getPlayerProgress(user.id!) ??
+          PlayerProgress.initial(user.id!);
+
+      final score = _scoreFromProgress(progress, category);
+
       entries.add(
         LeaderboardEntry(
-          rank: i + 1,
-          playerName: row.playerName,
-          score: row.score,
-          isCurrentUser: row.isCurrentUser,
+          rank: 0,
+          playerName: _displayName(user),
+          score: score,
+          isCurrentUser: user.id == currentUser.id,
         ),
       );
     }
 
-    final currentUserEntry =
-        entries.firstWhere((entry) => entry.isCurrentUser, orElse: () => entries.first);
+    if (!entries.any((entry) => entry.isCurrentUser)) {
+      entries.add(
+        LeaderboardEntry(
+          rank: 0,
+          playerName: _displayName(currentUser),
+          score: currentUserTotals?[category] ?? 0,
+          isCurrentUser: true,
+        ),
+      );
+    }
+
+    entries.sort((a, b) => b.score.compareTo(a.score));
+
+    final rankedEntries = List<LeaderboardEntry>.generate(entries.length, (index) {
+      final entry = entries[index];
+      return LeaderboardEntry(
+        rank: index + 1,
+        playerName: entry.playerName,
+        score: entry.score,
+        isCurrentUser: entry.isCurrentUser,
+      );
+    });
+
+    final currentUserEntry = rankedEntries.firstWhere(
+      (entry) => entry.isCurrentUser,
+      orElse: () => rankedEntries.isNotEmpty
+          ? rankedEntries.first
+          : LeaderboardEntry(
+              rank: 1,
+              playerName: _displayName(currentUser),
+              score: currentUserTotals?[category] ?? 0,
+              isCurrentUser: true,
+            ),
+    );
 
     return LeaderboardSnapshot(
       category: category,
-      topEntries: entries.take(10).toList(),
+      topEntries: rankedEntries.take(10).toList(),
       currentUserEntry: currentUserEntry,
     );
   }
 
   @override
   Future<PersonalRankingsSummary> getPersonalSummary() async {
-    await Future<void>.delayed(const Duration(milliseconds: 100));
+    final results = await Future.wait<LeaderboardSnapshot>(
+      RankingCategory.values.map(getLeaderboard),
+    );
 
-    final rankings = <RankingCategory, LeaderboardEntry>{};
-    for (final category in RankingCategory.values) {
-      final leaderboard = await getLeaderboard(category);
-      rankings[category] = leaderboard.currentUserEntry;
-    }
-
-    return PersonalRankingsSummary(rankings: rankings);
+    return PersonalRankingsSummary(
+      rankings: {
+        for (final snapshot in results) snapshot.category: snapshot.currentUserEntry,
+      },
+    );
   }
 
-  String get _displayName {
-    final trimmed = currentUser.name.trim();
-    if (trimmed.isNotEmpty) return trimmed;
-    return 'You';
+  int _scoreFromProgress(PlayerProgress progress, RankingCategory category) {
+    switch (category) {
+      case RankingCategory.pushUps:
+        return progress.totalPushups;
+      case RankingCategory.squats:
+        return progress.totalSquats;
+      case RankingCategory.jumpingJacks:
+        return progress.totalJumpingJacks;
+    }
+  }
+
+  String _displayName(AppUser user) {
+    final trimmed = user.name.trim();
+    return trimmed.isEmpty ? 'Unknown Athlete' : trimmed;
   }
 }
 
 class _ServerRankingsRepository implements RankingsRepository {
+  final AppUser currentUser;
+  final Map<RankingCategory, int>? currentUserTotals;
+
+  _ServerRankingsRepository({
+    required this.currentUser,
+    this.currentUserTotals,
+  });
+
   @override
   Future<LeaderboardSnapshot> getLeaderboard(RankingCategory category) async {
-    throw UnimplementedError(
-      'Backend integration pending. Plug your API call here for ${category.apiKey}.',
+    final token = await AuthService.instance.getToken();
+    if (token == null || token.isEmpty) {
+      throw Exception('Missing server token.');
+    }
+
+    final uri = Uri.parse(
+      '$apiBaseUrl/gamification/leaderboard?category=${category.apiKey}',
+    );
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Server leaderboard endpoint is not available yet. Add /gamification/leaderboard on backend.',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    final rawList = _extractEntriesList(decoded);
+
+    final entries = <LeaderboardEntry>[];
+    for (var i = 0; i < rawList.length; i++) {
+      final item = Map<String, dynamic>.from(rawList[i] as Map);
+
+      final rank = (item['rank'] as num?)?.toInt() ?? (i + 1);
+      final name = (item['name'] ??
+              item['player_name'] ??
+              item['username'] ??
+              item['display_name'] ??
+              '')
+          .toString();
+
+      final scoreNum = (item['score'] ??
+              item['value'] ??
+              item['total'] ??
+              item['count'] ??
+              item['reps'] ??
+              0) as num;
+      final score = scoreNum.toInt();
+
+      final userId = (item['user_id'] as num?)?.toInt();
+
+      final isCurrent = item['is_current_user'] == true ||
+          item['isCurrentUser'] == true ||
+          (userId != null && currentUser.id != null && userId == currentUser.id) ||
+          name.trim() == currentUser.name.trim();
+
+      entries.add(
+        LeaderboardEntry(
+          rank: rank,
+          playerName: name.trim().isEmpty ? 'Unknown Athlete' : name.trim(),
+          score: score,
+          isCurrentUser: isCurrent,
+        ),
+      );
+    }
+
+    if (entries.isEmpty) {
+      throw Exception('No leaderboard data returned from server.');
+    }
+
+    entries.sort((a, b) => a.rank.compareTo(b.rank));
+
+    LeaderboardEntry? currentEntry;
+    for (final entry in entries) {
+      if (entry.isCurrentUser) {
+        currentEntry = entry;
+        break;
+      }
+    }
+
+    currentEntry ??= LeaderboardEntry(
+      rank: entries.length + 1,
+      playerName:
+          currentUser.name.trim().isEmpty ? 'You' : currentUser.name.trim(),
+      score: currentUserTotals?[category] ?? 0,
+      isCurrentUser: true,
+    );
+
+    return LeaderboardSnapshot(
+      category: category,
+      topEntries: entries.take(10).toList(),
+      currentUserEntry: currentEntry,
     );
   }
 
   @override
   Future<PersonalRankingsSummary> getPersonalSummary() async {
-    throw UnimplementedError(
-      'Backend integration pending. Return the current user ranks for all exercises.',
+    final results = await Future.wait<LeaderboardSnapshot>(
+      RankingCategory.values.map(getLeaderboard),
+    );
+
+    return PersonalRankingsSummary(
+      rankings: {
+        for (final snapshot in results) snapshot.category: snapshot.currentUserEntry,
+      },
     );
   }
-}
 
-class _SeedLeaderboardRow {
-  final String playerName;
-  final int score;
-  final bool isCurrentUser;
+  List<dynamic> _extractEntriesList(dynamic decoded) {
+    if (decoded is List) return decoded;
 
-  const _SeedLeaderboardRow(
-    this.playerName,
-    this.score, {
-    this.isCurrentUser = false,
-  });
+    if (decoded is Map<String, dynamic>) {
+      if (decoded['entries'] is List) return decoded['entries'] as List<dynamic>;
+      if (decoded['leaderboard'] is List) {
+        return decoded['leaderboard'] as List<dynamic>;
+      }
+      if (decoded['data'] is List) return decoded['data'] as List<dynamic>;
+    }
+
+    return const [];
+  }
 }
 
 class _CategoryTabs extends StatelessWidget {
@@ -530,16 +493,18 @@ class _CategoryTabs extends StatelessWidget {
       child: Row(
         children: RankingCategory.values.map((category) {
           final isSelected = category == selectedCategory;
+
           return Padding(
             padding: const EdgeInsets.only(right: 10),
             child: GestureDetector(
               onTap: () => onCategorySelected(category),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? const Color(0xFF06B6D4).withValues(alpha: 0.15)
+                      ? const Color(0xFF06B6D4).withOpacity(0.15)
                       : const Color(0xFF111827),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
@@ -551,7 +516,8 @@ class _CategoryTabs extends StatelessWidget {
                 child: Text(
                   category.label,
                   style: TextStyle(
-                    color: isSelected ? Colors.white : const Color(0xFFCBD5E1),
+                    color:
+                        isSelected ? Colors.white : const Color(0xFFCBD5E1),
                     fontWeight: FontWeight.w700,
                     fontSize: 14,
                   ),
@@ -574,9 +540,32 @@ class _LeaderboardCard extends StatelessWidget {
     required this.isRefreshing,
   });
 
+  Color _podiumColor(int rank) {
+    switch (rank) {
+      case 1:
+        return const Color(0xFFFACC15);
+      case 2:
+        return const Color(0xFFE5E7EB);
+      case 3:
+        return const Color(0xFFFB923C);
+      default:
+        return const Color(0xFF06B6D4);
+    }
+  }
+
+  IconData _categoryIcon(RankingCategory category) {
+    switch (category) {
+      case RankingCategory.pushUps:
+        return Icons.fitness_center_rounded;
+      case RankingCategory.squats:
+        return Icons.accessibility_new_rounded;
+      case RankingCategory.jumpingJacks:
+        return Icons.directions_run_rounded;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final currentUser = snapshot.currentUserEntry;
     final needed = snapshot.scoreNeededToReachPrevious;
 
     return Container(
@@ -584,14 +573,7 @@ class _LeaderboardCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF111827),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFF1F2937)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 20,
-            offset: Offset(0, 12),
-          ),
-        ],
+        border: Border.all(color: const Color(0xFF334155)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -622,7 +604,11 @@ class _LeaderboardCard extends StatelessWidget {
           ...snapshot.topEntries.map(
             (entry) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _LeaderboardRow(entry: entry),
+              child: _LeaderboardRow(
+                entry: entry,
+                categoryIcon: _categoryIcon(snapshot.category),
+                podiumColor: _podiumColor,
+              ),
             ),
           ),
           if (!snapshot.isCurrentUserInTopTen) ...[
@@ -630,11 +616,15 @@ class _LeaderboardCard extends StatelessWidget {
               padding: EdgeInsets.symmetric(vertical: 10),
               child: Divider(color: Color(0xFF334155)),
             ),
-            _LeaderboardRow(entry: currentUser),
+            _LeaderboardRow(
+              entry: snapshot.currentUserEntry,
+              categoryIcon: _categoryIcon(snapshot.category),
+              podiumColor: _podiumColor,
+            ),
             if (needed != null) ...[
               const SizedBox(height: 10),
               Text(
-                '$needed more to reach #${currentUser.rank - 1}',
+                '$needed more to reach #${snapshot.currentUserEntry.rank - 1}',
                 style: const TextStyle(
                   color: Color(0xFF94A3B8),
                   fontSize: 13,
@@ -651,14 +641,21 @@ class _LeaderboardCard extends StatelessWidget {
 
 class _LeaderboardRow extends StatelessWidget {
   final LeaderboardEntry entry;
+  final IconData categoryIcon;
+  final Color Function(int rank) podiumColor;
 
-  const _LeaderboardRow({required this.entry});
+  const _LeaderboardRow({
+    required this.entry,
+    required this.categoryIcon,
+    required this.podiumColor,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final textColor = entry.isCurrentUser ? Colors.white : const Color(0xFFE5E7EB);
+    final textColor =
+        entry.isCurrentUser ? Colors.white : const Color(0xFFE5E7EB);
     final backgroundColor = entry.isCurrentUser
-        ? const Color(0xFF06B6D4).withValues(alpha: 0.12)
+        ? const Color(0xFF06B6D4).withOpacity(0.12)
         : Colors.transparent;
 
     return Container(
@@ -676,23 +673,38 @@ class _LeaderboardRow extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              entry.isCurrentUser ? '${entry.playerName} (You)' : entry.playerName,
+              entry.isCurrentUser
+                  ? '${entry.playerName} (You)'
+                  : entry.playerName,
               style: TextStyle(
                 color: textColor,
                 fontSize: 17,
-                fontWeight: entry.isCurrentUser ? FontWeight.w800 : FontWeight.w600,
+                fontWeight:
+                    entry.isCurrentUser ? FontWeight.w800 : FontWeight.w600,
               ),
               overflow: TextOverflow.ellipsis,
             ),
           ),
           const SizedBox(width: 12),
-          Text(
-            _formatNumber(entry.score),
-            style: TextStyle(
-              color: textColor,
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-            ),
+          Row(
+            children: [
+              Icon(
+                categoryIcon,
+                size: 18,
+                color: entry.rank <= 3
+                    ? podiumColor(entry.rank)
+                    : const Color(0xFF06B6D4),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _formatNumber(entry.score),
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -736,7 +748,9 @@ class _RankBadge extends StatelessWidget {
 class _YourRankingsCard extends StatelessWidget {
   final PersonalRankingsSummary summary;
 
-  const _YourRankingsCard({required this.summary});
+  const _YourRankingsCard({
+    required this.summary,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -745,7 +759,7 @@ class _YourRankingsCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF111827),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFF1F2937)),
+        border: Border.all(color: const Color(0xFF334155)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -761,6 +775,7 @@ class _YourRankingsCard extends StatelessWidget {
           const SizedBox(height: 18),
           ...RankingCategory.values.map((category) {
             final entry = summary.rankings[category];
+
             return Padding(
               padding: const EdgeInsets.only(bottom: 14),
               child: Row(
@@ -788,6 +803,38 @@ class _YourRankingsCard extends StatelessWidget {
             );
           }),
         ],
+      ),
+    );
+  }
+}
+
+class _TopCircleButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _TopCircleButton({
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: Ink(
+        width: 46,
+        height: 46,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E293B),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF334155)),
+        ),
+        child: Icon(
+          icon,
+          color: Colors.white,
+          size: 22,
+        ),
       ),
     );
   }

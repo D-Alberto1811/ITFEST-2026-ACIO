@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/achievements_data.dart';
 import '../data/quest_data.dart';
@@ -41,6 +42,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   static const Color _purple = Color(0xFFA78BFA);
 
   bool _isLoading = true;
+  bool _exerciseOverlayEnabled = true;
 
   PlayerProgress? _progress;
   Set<int> _completedQuestIds = <int>{};
@@ -52,6 +54,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     _displayName = widget.user.name;
     _loadProfileData();
+    _loadExerciseOverlaySetting();
+  }
+
+  String _overlaySettingKey(int userId) {
+    return 'exercise_overlay_enabled_user_$userId';
+  }
+
+  Future<void> _loadExerciseOverlaySetting() async {
+    final userId = widget.user.id ?? 0;
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getBool(_overlaySettingKey(userId));
+
+    if (!mounted) return;
+    setState(() {
+      _exerciseOverlayEnabled = value ?? true;
+    });
+  }
+
+  Future<void> _saveExerciseOverlaySetting(bool value) async {
+    final userId = widget.user.id ?? 0;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_overlaySettingKey(userId), value);
   }
 
   Future<void> _loadProfileData() async {
@@ -357,67 +381,88 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        return Container(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-          decoration: const BoxDecoration(
-            color: _panel,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            border: Border(
-              top: BorderSide(color: _border),
-              left: BorderSide(color: _border),
-              right: BorderSide(color: _border),
-            ),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 46,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: _border,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+              decoration: const BoxDecoration(
+                color: _panel,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                border: Border(
+                  top: BorderSide(color: _border),
+                  left: BorderSide(color: _border),
+                  right: BorderSide(color: _border),
                 ),
-                const SizedBox(height: 20),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Settings',
-                    style: TextStyle(
-                      color: _text,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
+              ),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: _border,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 20),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Settings',
+                        style: TextStyle(
+                          color: _text,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    _buildSettingsTile(
+                      icon: Icons.edit_rounded,
+                      iconColor: _accent,
+                      title: 'Edit profile',
+                      subtitle: 'Change your display name',
+                      onTap: () {
+                        Navigator.pop(context);
+                        _openEditProfileSheet();
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _buildSettingsToggleTile(
+                      icon: Icons.visibility_outlined,
+                      iconColor: _gold,
+                      title: 'Workout posture overlay',
+                      subtitle: 'Show guide lines and points during exercise detection',
+                      value: _exerciseOverlayEnabled,
+                      onChanged: (value) async {
+                        setState(() {
+                          _exerciseOverlayEnabled = value;
+                        });
+                        setModalState(() {
+                          _exerciseOverlayEnabled = value;
+                        });
+                        await _saveExerciseOverlaySetting(value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _buildSettingsTile(
+                      icon: Icons.logout_rounded,
+                      iconColor: _danger,
+                      title: 'Log out',
+                      subtitle: 'Sign out from your account',
+                      onTap: () async {
+                        Navigator.pop(context);
+                        await _logout();
+                      },
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 18),
-                _buildSettingsTile(
-                  icon: Icons.edit_rounded,
-                  iconColor: _accent,
-                  title: 'Edit profile',
-                  subtitle: 'Change your display name',
-                  onTap: () {
-                    Navigator.pop(context);
-                    _openEditProfileSheet();
-                  },
-                ),
-                const SizedBox(height: 12),
-                _buildSettingsTile(
-                  icon: Icons.logout_rounded,
-                  iconColor: _danger,
-                  title: 'Log out',
-                  subtitle: 'Sign out from your account',
-                  onTap: () async {
-                    Navigator.pop(context);
-                    await _logout();
-                  },
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -483,6 +528,70 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSettingsToggleTile({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: _bg,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: _border),
+            ),
+            child: Icon(icon, color: iconColor, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: _text,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: _muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: _accent,
+            inactiveThumbColor: _muted,
+            inactiveTrackColor: _bg,
+          ),
+        ],
       ),
     );
   }

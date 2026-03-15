@@ -1,6 +1,11 @@
-import 'package:flutter/material.dart';
+import 'dart:convert';
 
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../data/achievements_data.dart';
 import '../data/quest_data.dart';
+import '../models/achievement.dart';
 import '../models/app_user.dart';
 import '../models/player_progress.dart';
 import '../models/quest.dart';
@@ -10,7 +15,6 @@ import '../services/local_storage_service.dart';
 import '../widgets/home/home_daily_quests_tab.dart';
 import '../widgets/home/home_hero_card.dart';
 import '../widgets/home/home_section_headers.dart';
-import 'login_screen.dart';
 import 'path_screen.dart';
 import 'profile_screen.dart';
 import 'workout_screen.dart';
@@ -46,6 +50,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Set<int> completedQuestIds = <int>{};
 
+  List<_HomeNotificationItem> _notifications = [];
+
   late final List<Quest> _pathQuests = buildPathQuests();
   List<Quest> get _dailyQuests => dailyQuests;
   List<Quest> get _allQuests => getAllQuests();
@@ -56,6 +62,274 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadCurrentUserAndProgress();
   }
 
+  String _notificationsStorageKey(int userId) {
+    return 'home_notifications_user_$userId';
+  }
+
+  String _welcomeNotificationKey(int userId) {
+    return 'welcome_notification_created_user_$userId';
+  }
+
+  Future<List<_HomeNotificationItem>> _loadNotificationsForUser(int userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_notificationsStorageKey(userId));
+    if (raw == null || raw.isEmpty) return [];
+
+    try {
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      return decoded
+          .map((e) => _HomeNotificationItem.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> _persistNotificationsForUser(
+    int userId,
+    List<_HomeNotificationItem> items,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _notificationsStorageKey(userId),
+      jsonEncode(items.map((e) => e.toMap()).toList()),
+    );
+  }
+
+  Future<void> _addNotification({
+    required String title,
+    required String message,
+  }) async {
+    final user = _currentUser;
+    if (user == null || user.id == null) return;
+
+    final newItem = _HomeNotificationItem(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      title: title,
+      message: message,
+      createdAt: DateTime.now().toIso8601String(),
+      isRead: false,
+    );
+
+    final updated = [newItem, ..._notifications];
+
+    if (!mounted) return;
+    setState(() {
+      _notifications = updated;
+    });
+
+    await _persistNotificationsForUser(user.id!, updated);
+  }
+
+  Future<void> _markNotificationsAsRead() async {
+    final user = _currentUser;
+    if (user == null || user.id == null) return;
+
+    final updated = _notifications
+        .map((e) => e.copyWith(isRead: true))
+        .toList();
+
+    if (!mounted) return;
+    setState(() {
+      _notifications = updated;
+    });
+
+    await _persistNotificationsForUser(user.id!, updated);
+  }
+
+  Future<void> _ensureWelcomeNotificationForUser(int userId, String name) async {
+    final prefs = await SharedPreferences.getInstance();
+    final alreadyCreated = prefs.getBool(_welcomeNotificationKey(userId)) ?? false;
+
+    if (alreadyCreated) return;
+
+    final welcomeItem = _HomeNotificationItem(
+      id: 'welcome_$userId',
+      title: 'Welcome!',
+      message: 'Welcome $name! Your account is ready. Let’s start training.',
+      createdAt: DateTime.now().toIso8601String(),
+      isRead: false,
+    );
+
+    final updated = [welcomeItem, ..._notifications];
+
+    if (mounted) {
+      setState(() {
+        _notifications = updated;
+      });
+    }
+
+    await _persistNotificationsForUser(userId, updated);
+    await prefs.setBool(_welcomeNotificationKey(userId), true);
+  }
+
+  List<Achievement> _getUnlockedAchievementsFromProgress({
+    required int levelValue,
+    required int xpValue,
+    required int totalXpValue,
+    required int xpForNextValue,
+    required int gemsValue,
+    required int streakDaysValue,
+    required int totalPushupsValue,
+    required int totalSquatsValue,
+    required int totalJumpingJacksValue,
+    required String? lastStreakDateValue,
+  }) {
+    final tempProgress = PlayerProgress(
+      userId: _currentUser?.id ?? 0,
+      level: levelValue,
+      xp: xpValue,
+      totalXp: totalXpValue,
+      xpForNext: xpForNextValue,
+      gems: gemsValue,
+      streakDays: streakDaysValue,
+      totalPushups: totalPushupsValue,
+      totalSquats: totalSquatsValue,
+      totalJumpingJacks: totalJumpingJacksValue,
+      lastStreakDate: lastStreakDateValue,
+      updatedAt: DateTime.now().toIso8601String(),
+    );
+
+    return achievementCatalog
+        .where((achievement) => achievement.isUnlocked(tempProgress))
+        .toList();
+  }
+
+  Future<void> _addAchievementNotifications({
+    required List<Achievement> beforeAchievements,
+    required List<Achievement> afterAchievements,
+  }) async {
+    final beforeTitles = beforeAchievements.map((e) => e.title).toSet();
+    final newlyUnlocked = afterAchievements
+        .where((achievement) => !beforeTitles.contains(achievement.title))
+        .toList();
+
+    for (final achievement in newlyUnlocked) {
+      await _addNotification(
+        title: 'Achievement unlocked',
+        message: 'You unlocked "${achievement.title}".',
+      );
+    }
+  }
+
+  int get _unreadNotificationCount =>
+      _notifications.where((e) => !e.isRead).length;
+
+  Future<void> _openNotificationsSheet() async {
+    await _markNotificationsAsRead();
+
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+          decoration: const BoxDecoration(
+            color: Color(0xFF111827),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            border: Border(
+              top: BorderSide(color: Color(0xFF334155)),
+              left: BorderSide(color: Color(0xFF334155)),
+              right: BorderSide(color: Color(0xFF334155)),
+            ),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 46,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF334155),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Notifications',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (_notifications.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFF334155)),
+                    ),
+                    child: const Text(
+                      'No notifications yet.',
+                      style: TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 420),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _notifications.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final item = _notifications[index];
+                        return Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E293B),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: const Color(0xFF334155)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.title,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                item.message,
+                                style: const TextStyle(
+                                  color: Color(0xFF94A3B8),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _loadCurrentUserAndProgress() async {
     try {
       final user = await AuthService.instance.getCurrentUser();
@@ -63,6 +337,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (user != null) {
         final localProgress =
             await LocalStorageService.instance.getOrCreateProgress(user.id!);
+
+        final localNotifications = await _loadNotificationsForUser(user.id!);
 
         final isServer = await AuthService.instance.isServerSession();
         if (isServer) {
@@ -99,8 +375,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             .length;
                 lastStreakDate = localProgress.lastStreakDate;
 
+                _notifications = localNotifications;
                 _isLoadingUser = false;
               });
+
+              await _ensureWelcomeNotificationForUser(
+                user.id!,
+                user.name.trim().isEmpty ? 'Athlete' : user.name.trim(),
+              );
               return;
             }
           }
@@ -139,8 +421,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           _dailyQuests.any((quest) => quest.id == questId))
                       .length;
           lastStreakDate = progress.lastStreakDate;
+          _notifications = localNotifications;
           _isLoadingUser = false;
         });
+
+        await _ensureWelcomeNotificationForUser(
+          user.id!,
+          user.name.trim().isEmpty ? 'Athlete' : user.name.trim(),
+        );
         return;
       }
 
@@ -154,15 +442,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _isLoadingUser = false;
       });
     }
-  }
-
-  Future<void> _logout() async {
-    await AuthService.instance.logout();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
   }
 
   Future<void> _saveProgress() async {
@@ -264,6 +543,22 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_currentUser == null || _currentUser!.id == null) return;
     if (completedQuestIds.contains(quest.id)) return;
 
+    final previousLevel = level;
+    final previousStreak = streakDays;
+
+    final achievementsBefore = _getUnlockedAchievementsFromProgress(
+      levelValue: level,
+      xpValue: xp,
+      totalXpValue: totalXp,
+      xpForNextValue: xpForNext,
+      gemsValue: gems,
+      streakDaysValue: streakDays,
+      totalPushupsValue: totalPushups,
+      totalSquatsValue: totalSquats,
+      totalJumpingJacksValue: totalJumpingJacks,
+      lastStreakDateValue: lastStreakDate,
+    );
+
     final isServer = await AuthService.instance.isServerSession();
     if (isServer) {
       final token = await AuthService.instance.getToken();
@@ -298,6 +593,44 @@ class _HomeScreenState extends State<HomeScreen> {
             quest.id,
           );
           await _saveProgress();
+
+          await _addNotification(
+            title: 'Quest completed',
+            message:
+                'You finished "${quest.title}" and earned ${quest.rewardXp} XP + ${quest.rewardGems} gems.',
+          );
+
+          if (level > previousLevel) {
+            await _addNotification(
+              title: 'Level up',
+              message: 'Nice work! You reached level $level.',
+            );
+          }
+
+          if (streakDays > previousStreak) {
+            await _addNotification(
+              title: 'Streak updated',
+              message: 'Your streak is now $streakDays day${streakDays == 1 ? '' : 's'}.',
+            );
+          }
+
+          final achievementsAfter = _getUnlockedAchievementsFromProgress(
+            levelValue: level,
+            xpValue: xp,
+            totalXpValue: totalXp,
+            xpForNextValue: xpForNext,
+            gemsValue: gems,
+            streakDaysValue: streakDays,
+            totalPushupsValue: totalPushups,
+            totalSquatsValue: totalSquats,
+            totalJumpingJacksValue: totalJumpingJacks,
+            lastStreakDateValue: lastStreakDate,
+          );
+
+          await _addAchievementNotifications(
+            beforeAchievements: achievementsBefore,
+            afterAchievements: achievementsAfter,
+          );
         }
         return;
       }
@@ -326,6 +659,44 @@ class _HomeScreenState extends State<HomeScreen> {
       quest.id,
     );
     await _saveProgress();
+
+    await _addNotification(
+      title: 'Quest completed',
+      message:
+          'You finished "${quest.title}" and earned ${quest.rewardXp} XP + ${quest.rewardGems} gems.',
+    );
+
+    if (level > previousLevel) {
+      await _addNotification(
+        title: 'Level up',
+        message: 'Nice work! You reached level $level.',
+      );
+    }
+
+    if (streakDays > previousStreak) {
+      await _addNotification(
+        title: 'Streak updated',
+        message: 'Your streak is now $streakDays day${streakDays == 1 ? '' : 's'}.',
+      );
+    }
+
+    final achievementsAfter = _getUnlockedAchievementsFromProgress(
+      levelValue: level,
+      xpValue: xp,
+      totalXpValue: totalXp,
+      xpForNextValue: xpForNext,
+      gemsValue: gems,
+      streakDaysValue: streakDays,
+      totalPushupsValue: totalPushups,
+      totalSquatsValue: totalSquats,
+      totalJumpingJacksValue: totalJumpingJacks,
+      lastStreakDateValue: lastStreakDate,
+    );
+
+    await _addAchievementNotifications(
+      beforeAchievements: achievementsBefore,
+      afterAchievements: achievementsAfter,
+    );
   }
 
   void _openProfile() {
@@ -404,6 +775,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   _HomeTopBar(
                     streakDays: streakDays,
                     gems: gems,
+                    unreadNotifications: _unreadNotificationCount,
+                    onNotificationsTap: _openNotificationsSheet,
                     onProfileTap: _openProfile,
                   ),
                   const SizedBox(height: 20),
@@ -464,11 +837,15 @@ class _HomeScreenState extends State<HomeScreen> {
 class _HomeTopBar extends StatelessWidget {
   final int streakDays;
   final int gems;
+  final int unreadNotifications;
+  final VoidCallback onNotificationsTap;
   final VoidCallback onProfileTap;
 
   const _HomeTopBar({
     required this.streakDays,
     required this.gems,
+    required this.unreadNotifications,
+    required this.onNotificationsTap,
     required this.onProfileTap,
   });
 
@@ -492,6 +869,12 @@ class _HomeTopBar extends StatelessWidget {
           icon: Icons.diamond_rounded,
           value: gems.toString(),
           iconColor: const Color(0xFFA78BFA),
+        ),
+        const SizedBox(width: 8),
+        _TopIconButtonWithBadge(
+          icon: Icons.notifications_none_rounded,
+          badgeCount: unreadNotifications,
+          onTap: onNotificationsTap,
         ),
         const SizedBox(width: 8),
         _RoundActionButton(
@@ -568,6 +951,67 @@ class _RoundActionButton extends StatelessWidget {
           color: Colors.white,
           size: 22,
         ),
+      ),
+    );
+  }
+}
+
+class _TopIconButtonWithBadge extends StatelessWidget {
+  final IconData icon;
+  final int badgeCount;
+  final VoidCallback onTap;
+
+  const _TopIconButtonWithBadge({
+    required this.icon,
+    required this.badgeCount,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFF334155)),
+            ),
+            child: Icon(
+              icon,
+              color: Colors.white,
+              size: 22,
+            ),
+          ),
+          if (badgeCount > 0)
+            Positioned(
+              right: -2,
+              top: -4,
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFF0F172A), width: 2),
+                ),
+                child: Text(
+                  badgeCount > 9 ? '9+' : '$badgeCount',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -673,6 +1117,58 @@ class _DockIconButton extends StatelessWidget {
           size: 22,
         ),
       ),
+    );
+  }
+}
+
+class _HomeNotificationItem {
+  final String id;
+  final String title;
+  final String message;
+  final String createdAt;
+  final bool isRead;
+
+  const _HomeNotificationItem({
+    required this.id,
+    required this.title,
+    required this.message,
+    required this.createdAt,
+    required this.isRead,
+  });
+
+  _HomeNotificationItem copyWith({
+    String? id,
+    String? title,
+    String? message,
+    String? createdAt,
+    bool? isRead,
+  }) {
+    return _HomeNotificationItem(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      message: message ?? this.message,
+      createdAt: createdAt ?? this.createdAt,
+      isRead: isRead ?? this.isRead,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'message': message,
+      'createdAt': createdAt,
+      'isRead': isRead,
+    };
+  }
+
+  factory _HomeNotificationItem.fromMap(Map<String, dynamic> map) {
+    return _HomeNotificationItem(
+      id: map['id']?.toString() ?? '',
+      title: map['title']?.toString() ?? '',
+      message: map['message']?.toString() ?? '',
+      createdAt: map['createdAt']?.toString() ?? '',
+      isRead: map['isRead'] == true,
     );
   }
 }
