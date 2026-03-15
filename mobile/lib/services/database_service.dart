@@ -10,7 +10,7 @@ class DatabaseService {
   static final DatabaseService instance = DatabaseService._();
 
   static const String _databaseName = 'fitlingo.db';
-  static const int _databaseVersion = 3;
+  static const int _databaseVersion = 5;
 
   static const String usersTable = 'users';
   static const String playerProgressTable = 'player_progress';
@@ -67,6 +67,29 @@ class DatabaseService {
         ''');
       }
     }
+
+    if (oldVersion < 5) {
+      await _addIntegerColumnIfMissing(
+        db,
+        playerProgressTable,
+        'total_pushups',
+      );
+      await _addIntegerColumnIfMissing(
+        db,
+        playerProgressTable,
+        'total_squats',
+      );
+      await _addIntegerColumnIfMissing(
+        db,
+        playerProgressTable,
+        'total_jumping_jacks',
+      );
+      await _addTextColumnIfMissing(
+        db,
+        playerProgressTable,
+        'last_streak_date',
+      );
+    }
   }
 
   Future<bool> _columnExists(Database db, String table, String column) async {
@@ -74,6 +97,34 @@ class DatabaseService {
       'PRAGMA table_info($table)',
     );
     return result.any((row) => (row['name'] as String?) == column);
+  }
+
+  Future<void> _addIntegerColumnIfMissing(
+    Database db,
+    String table,
+    String column,
+    ) async {
+      final exists = await _columnExists(db, table, column);
+      if (!exists) {
+        await db.execute('''
+          ALTER TABLE $table
+          ADD COLUMN $column INTEGER NOT NULL DEFAULT 0
+        ''');
+      }
+  }
+  
+  Future<void> _addTextColumnIfMissing(
+    Database db,
+    String table,
+    String column,
+    ) async {
+      final exists = await _columnExists(db, table, column);
+      if (!exists) {
+        await db.execute('''
+          ALTER TABLE $table
+          ADD COLUMN $column TEXT
+        ''');
+      }
   }
 
   Future<void> _createUsersTable(Database db) async {
@@ -110,6 +161,10 @@ class DatabaseService {
         xp_for_next INTEGER NOT NULL,
         gems INTEGER NOT NULL,
         streak_days INTEGER NOT NULL,
+        total_pushups INTEGER NOT NULL DEFAULT 0,
+        total_squats INTEGER NOT NULL DEFAULT 0,
+        total_jumping_jacks INTEGER NOT NULL DEFAULT 0,
+        last_streak_date TEXT,
         updated_at TEXT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES $usersTable(id) ON DELETE CASCADE
       )
