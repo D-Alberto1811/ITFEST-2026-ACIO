@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -20,6 +21,7 @@ import 'profile_screen.dart';
 import 'stretching_screen.dart';
 import 'workout_screen.dart';
 import 'worldwide_rankings_screen.dart';
+import 'exercise_tutorial_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -29,6 +31,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  Timer? _dailyQuestRefreshTimer;
   AppUser? _currentUser;
   bool _isLoadingUser = true;
 
@@ -54,15 +57,52 @@ class _HomeScreenState extends State<HomeScreen> {
   List<_HomeNotificationItem> _notifications = [];
 
   late final List<Quest> _pathQuests = buildPathQuests();
-  List<Quest> get _dailyQuests => dailyQuests;
-  List<Quest> get _allQuests => getAllQuests();
+  List<Quest> _dailyQuests = <Quest>[];
+  int _dailyQuestCycle = -1;
+
+  List<Quest> get _allQuests => getAllQuestsForUser(
+        userId: _currentUser?.id ?? 0,
+      );
 
   @override
   void initState() {
     super.initState();
+    _refreshDailyQuests(force: true);
+    _startDailyQuestRefreshWatcher();
     _loadCurrentUserAndProgress();
   }
 
+  @override
+  void dispose() {
+    _dailyQuestRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startDailyQuestRefreshWatcher() {
+    _dailyQuestRefreshTimer?.cancel();
+    _dailyQuestRefreshTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => _refreshDailyQuests(),
+    );
+  }
+
+  void _refreshDailyQuests({bool force = false}) {
+    final nextCycle = currentDailyQuestCycle();
+    if (!force && nextCycle == _dailyQuestCycle && _dailyQuests.isNotEmpty) {
+      return;
+    }
+
+    final nextQuests = buildDailyQuestsForCycle(
+      userId: _currentUser?.id ?? 0,
+      cycle: nextCycle,
+    );
+
+    if (!mounted && !force) return;
+
+    setState(() {
+      _dailyQuestCycle = nextCycle;
+      _dailyQuests = nextQuests;
+    });
   String _notificationsStorageKey(int userId) {
     return 'home_notifications_user_$userId';
   }
@@ -355,6 +395,12 @@ class _HomeScreenState extends State<HomeScreen> {
             final progressRes = await ApiClient.getProgress(token);
 
             if (progressRes != null && mounted) {
+              final currentCycle = currentDailyQuestCycle();
+              final currentDailyQuests = buildDailyQuestsForCycle(
+                userId: user.id!,
+                cycle: currentCycle,
+              );
+
               setState(() {
                 _currentUser = user;
                 level = progressRes.level;
@@ -382,6 +428,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 _dailyQuests.any((quest) => quest.id == questId))
                             .length;
                 lastStreakDate = localProgress.lastStreakDate;
+                _dailyQuestCycle = currentCycle;
+                _dailyQuests = currentDailyQuests;
 
                 _notifications = localNotifications;
                 _isLoadingUser = false;
@@ -429,6 +477,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           _dailyQuests.any((quest) => quest.id == questId))
                       .length;
           lastStreakDate = progress.lastStreakDate;
+          _dailyQuestCycle = currentDailyQuestCycle();
+          _dailyQuests = buildDailyQuestsForUser(
+            userId: user.id!,
+          );
           _notifications = localNotifications;
           _isLoadingUser = false;
         });
@@ -442,11 +494,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (!mounted) return;
       setState(() {
+        _dailyQuestCycle = currentDailyQuestCycle();
+        _dailyQuests = buildDailyQuestsForUser(userId: 0);
         _isLoadingUser = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
+        _dailyQuestCycle = currentDailyQuestCycle();
+        _dailyQuests = buildDailyQuestsForUser(userId: _currentUser?.id ?? 0);
         _isLoadingUser = false;
       });
     }
@@ -724,15 +780,30 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openWorkout(Quest quest) {
+  final isDailyQuest = _dailyQuests.any((item) => item.id == quest.id);
+
+  if (isDailyQuest) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => WorkoutScreen(
+        builder: (_) => ExerciseTutorialScreen(
           quest: quest,
           onComplete: () => _onQuestComplete(quest),
         ),
       ),
     );
+    return;
+  }
+
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => WorkoutScreen(
+        quest: quest,
+        onComplete: () => _onQuestComplete(quest),
+      ),
+    ),
+  );
   }
 
   void _openStretching() {
@@ -1052,41 +1123,43 @@ class _HomeBottomDock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(10),
+      height: 74,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF111827).withOpacity(0.95),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFF334155)),
-        boxShadow: [
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFF1F2937)),
+        boxShadow: const [
           BoxShadow(
-            color: Colors.black.withOpacity(0.28),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
+            color: Color(0x33000000),
+            blurRadius: 16,
+            offset: Offset(0, 8),
           ),
         ],
       ),
       child: Row(
         children: [
           Expanded(
-            child: _DockIconButton(
-              icon: Icons.flag_rounded,
+            child: _DockTabButton(
+              icon: Icons.today_rounded,
+              label: 'Daily',
               isSelected: selectedIndex == 0,
               onTap: () => onTabSelected(0),
-              selectedBorderColor: const Color(0xFF06B6D4),
-              selectedIconColor: const Color(0xFF06B6D4),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
-            child: _DockIconButton(
-              icon: Icons.alt_route_rounded,
+            child: _DockTabButton(
+              icon: Icons.route_rounded,
+              label: 'Path',
               isSelected: selectedIndex == 1,
               onTap: () => onTabSelected(1),
-              selectedBorderColor: const Color(0xFF06B6D4),
-              selectedIconColor: const Color(0xFF06B6D4),
             ),
           ),
+          const SizedBox(width: 8),
+          _DockCircleButton(
+            icon: Icons.emoji_events_rounded,
+            onTap: onLeaderboardTap,
           const SizedBox(width: 10),
           Expanded(
             child: _DockIconButton(
@@ -1113,39 +1186,79 @@ class _HomeBottomDock extends StatelessWidget {
   }
 }
 
-class _DockIconButton extends StatelessWidget {
+class _DockTabButton extends StatelessWidget {
   final IconData icon;
+  final String label;
   final bool isSelected;
   final VoidCallback onTap;
-  final Color selectedBorderColor;
-  final Color selectedIconColor;
 
-  const _DockIconButton({
+  const _DockTabButton({
     required this.icon,
+    required this.label,
     required this.isSelected,
     required this.onTap,
-    required this.selectedBorderColor,
-    required this.selectedIconColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bgColor =
+        isSelected ? const Color(0xFF06B6D4) : const Color(0xFF1F2937);
+    final Color fgColor = isSelected ? const Color(0xFF0F172A) : Colors.white;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: fgColor, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: fgColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DockCircleButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _DockCircleButton({
+    required this.icon,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Container(
+        width: 58,
+        height: double.infinity,
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected ? selectedBorderColor : const Color(0xFF334155),
-          ),
+          color: const Color(0xFF1F2937),
+          borderRadius: BorderRadius.circular(18),
         ),
         child: Icon(
           icon,
-          color: isSelected ? selectedIconColor : const Color(0xFF94A3B8),
-          size: 22,
+          color: Colors.white,
+          size: 24,
         ),
       ),
     );

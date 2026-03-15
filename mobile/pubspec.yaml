@@ -24,6 +24,7 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^4.0.0
   flutter_launcher_icons: ^0.14.4
+  video_player: ^2.9.5
 
 flutter_launcher_icons:
   android: true
@@ -38,3 +39,4 @@ flutter:
     - assets/images/logo.png
     - assets/images/app_icon.png
     - assets/images/achievements/
+    - assets/videos/tutorials/
