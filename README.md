@@ -1,92 +1,116 @@
-# FitLingo
+# ACIO
 
-Aplicație de fitness gamificată (tip "Duolingo pentru sport") cu detectare pose în timp real: Flotări, Genuflexiuni, Jumping Jacks. **100% on-device** – procesarea se face local pe telefon (GDPR compliant).
+ACIO este o aplicație de fitness gamificată, în care utilizatorul face exerciții fizice ghidate, primește XP, level, streak și achievements, iar repetările sunt detectate automat cu pose detection direct pe telefon.
 
-## Versiuni
+Aplicația este construită în jurul a 3 exerciții principale:
 
-| Platformă | Tehnologie | Status |
+- **Flotări**
+- **Genuflexiuni**
+- **Jumping Jacks**
+
+Procesarea exercițiilor se face **on-device**, folosind camera telefonului și Google ML Kit Pose Detection.
+
+## Status proiect
+
+| Componentă | Tehnologie | Status |
 |-----------|------------|--------|
-| **Android (mobile)** | Flutter + ML Kit Pose | ✅ Recomandat |
-| Web | React + MediaPipe | Există (frontend/) |
-| Backend | FastAPI + MySQL | Există (backend/) |
+| **Mobile app** | Flutter | ✅ Versiunea principală |
+| **Pose detection** | Google ML Kit Pose Detection | ✅ Integrat |
+| **Backend API** | FastAPI + SQLAlchemy + Alembic | ✅ Integrat |
+| **Autentificare locală** | SQLite + SharedPreferences | ✅ Disponibilă |
+| **Autentificare server** | JWT + Google Sign-In | ✅ Disponibilă |
+
+## Funcționalități principale
+
+- autentificare cu:
+  - email + parolă
+  - Google Sign-In
+- **daily quests** generate dinamic
+- **The Path** cu questuri progresive
+- tutorial video înainte de exercițiile din daily quests
+- detectare automată a repetărilor prin cameră
+- sistem de:
+  - **XP**
+  - **Level**
+  - **Gems**
+  - **Streak**
+  - **Best streak**
+- sistem de **achievements**
+- **leaderboard global**
+- **notificări locale** pentru streak reminder
+- setare pentru activare/dezactivare overlay-ului vizual al exercițiilor
+- suport pentru stocare:
+  - pe server
+  - local, în SQLite
 
 ## Tech Stack (Mobile)
 
-- **Flutter** - UI cross-platform
-- **Google ML Kit Pose Detection** - On-device, 0 date externe
-- **Camera** - CameraX pentru frame-uri
+- **Flutter**
+- **camera**
+- **google_mlkit_pose_detection**
+- **shared_preferences**
+- **sqflite**
+- **flutter_local_notifications**
+- **timezone**
+- **video_player**
+- **google_sign_in**
+- **http**
 
-## Structură
+## Structura proiectului
 
-```
-FitLingo/
-├── mobile/             # Flutter Android (RECOMANDAT)
+```text
+ACIO/
+├── mobile/
 │   ├── lib/
-│   │   ├── screens/    # Home, Workout
-│   │   ├── services/   # PoseService, ExerciseCounter
-│   │   └── models/
-│   └── SETUP.md        # Setup complet pentru telefon
-├── frontend/           # React + Vite (web)
+│   │   ├── config/
+│   │   │   ├── api_config.dart
+│   │   │   └── storage_config.dart
+│   │   ├── data/
+│   │   │   ├── achievements_data.dart
+│   │   │   └── quest_data.dart
+│   │   ├── models/
+│   │   │   ├── achievement.dart
+│   │   │   ├── app_user.dart
+│   │   │   ├── player_progress.dart
+│   │   │   └── quest.dart
+│   │   ├── screens/
+│   │   │   ├── achievements_screen.dart
+│   │   │   ├── exercise_tutorial_screen.dart
+│   │   │   ├── home_screen.dart
+│   │   │   ├── login_screen.dart
+│   │   │   ├── path_screen.dart
+│   │   │   ├── profile_screen.dart
+│   │   │   ├── register_screen.dart
+│   │   │   ├── stretch_tutorial_screen.dart
+│   │   │   ├── stretching_screen.dart
+│   │   │   ├── workout/
+│   │   │   ├── workout_screen.dart
+│   │   │   └── worldwide_rankings_screen.dart
+│   │   ├── services/
+│   │   │   ├── api_client.dart
+│   │   │   ├── auth_service.dart
+│   │   │   ├── database_service.dart
+│   │   │   ├── exercise_counter.dart
+│   │   │   ├── local_storage_service.dart
+│   │   │   ├── pose_service.dart
+│   │   │   └── streak_reminder_notification_service.dart
+│   │   ├── widgets/
+│   │   │   ├── achievement_icon.dart
+│   │   │   └── home/
+│   │   └── main.dart
+│   ├── assets/
+│   │   ├── images/
+│   │   └── videos/tutorials/
+│   └── pubspec.yaml
 ├── backend/
-│   ├── main.py        # FastAPI
-│   ├── config.py     # Settings (DATABASE_URL etc.)
-│   ├── database.py   # SQLAlchemy engine
-│   ├── models.py     # User, Player, PathNode, WorkoutSession
-│   ├── services/     # player_service
-│   └── alembic/      # Migrații (Prisma-like)
+│   ├── alembic/
+│   ├── routers/
+│   ├── auth_utils.py
+│   ├── config.py
+│   ├── database.py
+│   ├── gamification_logic.py
+│   ├── main.py
+│   ├── models.py
+│   ├── requirements.txt
+│   └── schemas.py
 └── README.md
-```
-
-## Baza de Date (MySQL)
-
-**Conexiune:** `mysql+pymysql://root@localhost:3306/itfest`
-
-### Setup inițial
-
-```bash
-cd backend
-source venv/bin/activate
-python -m scripts.init_db
-```
-
-Creează baza `itfest`, tabelele și userul default `guest`.
-
-Când MySQL nu e disponibil, aplicația folosește fallback in-memory (SQLite).
-
-## Rulare
-
-### Mobile (Android) – RECOMANDAT
-
-```bash
-cd mobile
-# Vezi SETUP.md pentru instalare Flutter + Android Studio
-flutter create . --org com.fitlingo
-
-flutter pub get
-flutter run
-```
-
-Conectează telefonul prin USB cu USB debugging activat.
-
-### Backend (opțional, pentru sync)
-
-```bash
-cd backend
-source venv/bin/activate
-uvicorn main:app --reload
-```
-
-### Frontend
-
-```bash
-cd frontend && npm install && npm run dev
-```
-
-## Mecanici
-
-- **XP & Level:** Acordate la finalizarea quest-urilor
-- **Gems:** Monedă in-app (Vieți, cosmetice Barnaby)
-- **Streaks:** Zile consecutive cu activitate
-- **The Path:** Traseu vertical cu noduri deblocate progresiv
-- **Barnaby Ursul:** Mascotă (placeholder)
-- **Anti-Cheat:** DeviceOrientationEvent (giroscop), body tilt (placeholder)
