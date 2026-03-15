@@ -958,7 +958,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           SizedBox(
             height: 60,
-          Container(
             child: Center(
               child: AchievementIcon(
                 iconPath: achievement.iconPath,
