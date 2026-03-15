@@ -19,10 +19,10 @@ class AchievementsScreen extends StatelessWidget {
     final unlockedCount = getUnlockedAchievementCount(progress);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFB8F28E),
-        foregroundColor: const Color(0xFF3C3C3C),
+        backgroundColor: const Color(0xFF111827),
+        foregroundColor: Colors.white,
         elevation: 0,
         title: const Text(
           'Achievements',
@@ -42,7 +42,7 @@ class AchievementsScreen extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w900,
-                  color: Color(0xFFA8A8A8),
+                  color: Color(0xFF94A3B8),
                   letterSpacing: 1.1,
                 ),
               ),
@@ -78,9 +78,9 @@ class AchievementsScreen extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF111827),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE7E7E7)),
+        border: Border.all(color: const Color(0xFF334155)),
       ),
       child: Row(
         children: [
@@ -88,13 +88,13 @@ class AchievementsScreen extends StatelessWidget {
             width: 62,
             height: 62,
             decoration: const BoxDecoration(
-              color: Color(0xFFFFF3BF),
+              color: Color(0xFF1E293B),
               shape: BoxShape.circle,
             ),
             child: const Icon(
               Icons.emoji_events_rounded,
               size: 30,
-              color: Color(0xFFFFB800),
+              color: Color(0xFFFACC15),
             ),
           ),
           const SizedBox(width: 16),
@@ -107,7 +107,7 @@ class AchievementsScreen extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
-                    color: Color(0xFF3C3C3C),
+                    color: Colors.white,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -115,7 +115,7 @@ class AchievementsScreen extends StatelessWidget {
                   '$unlockedCount / ${achievementCatalog.length} achievements unlocked',
                   style: const TextStyle(
                     fontSize: 14,
-                    color: Color(0xFF7B7B7B),
+                    color: Color(0xFF94A3B8),
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -147,12 +147,12 @@ class _AchievementGridCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isUnlocked ? Colors.white : const Color(0xFFF0F0F0),
+        color: isUnlocked ? const Color(0xFF111827) : const Color(0xFF172033),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
           color: isUnlocked
-              ? const Color(0xFFDFF3CF)
-              : const Color(0xFFE1E1E1),
+              ? const Color(0xFF06B6D4)
+              : const Color(0xFF334155),
         ),
       ),
       child: Column(
@@ -180,6 +180,7 @@ class _AchievementGridCard extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
+                color: isUnlocked ? Colors.white : const Color(0xFF94A3B8),
                 color: isUnlocked
                     ? const Color(0xFF3C3C3C)
                     : const Color(0xFF7A7A7A),
@@ -194,7 +195,7 @@ class _AchievementGridCard extends StatelessWidget {
             style: const TextStyle(
               fontSize: 11,
               height: 1.25,
-              color: Color(0xFF8F8F8F),
+              color: Color(0xFF94A3B8),
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -204,9 +205,14 @@ class _AchievementGridCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
               color: isUnlocked
-                  ? const Color(0xFFEAF8DE)
-                  : const Color(0xFFE7E7E7),
+                  ? const Color(0xFF1E293B)
+                  : const Color(0xFF0F172A),
               borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isUnlocked
+                    ? const Color(0xFF06B6D4)
+                    : const Color(0xFF334155),
+              ),
             ),
             child: Text(
               isUnlocked ? 'Unlocked' : '$displayValue / ${achievement.target}',
@@ -215,8 +221,8 @@ class _AchievementGridCard extends StatelessWidget {
                 fontSize: 11,
                 fontWeight: FontWeight.w800,
                 color: isUnlocked
-                    ? const Color(0xFF58CC02)
-                    : const Color(0xFF8F8F8F),
+                    ? const Color(0xFF06B6D4)
+                    : const Color(0xFF94A3B8),
               ),
             ),
           ),
