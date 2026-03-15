@@ -6,9 +6,12 @@ class PlayerProgress {
   final int xpForNext;
   final int gems;
   final int streakDays;
+  final int bestStreakDays;
   final int totalPushups;
   final int totalSquats;
   final int totalJumpingJacks;
+  final int totalWorkoutsCompleted;
+  final int totalDailyChallengesCompleted;
   final String? lastStreakDate;
   final String updatedAt;
 
@@ -20,9 +23,12 @@ class PlayerProgress {
     required this.xpForNext,
     required this.gems,
     required this.streakDays,
+    required this.bestStreakDays,
     required this.totalPushups,
     required this.totalSquats,
     required this.totalJumpingJacks,
+    required this.totalWorkoutsCompleted,
+    required this.totalDailyChallengesCompleted,
     required this.lastStreakDate,
     required this.updatedAt,
   });
@@ -36,9 +42,12 @@ class PlayerProgress {
       xpForNext: 100,
       gems: 0,
       streakDays: 0,
+      bestStreakDays: 0,
       totalPushups: 0,
       totalSquats: 0,
       totalJumpingJacks: 0,
+      totalWorkoutsCompleted: 0,
+      totalDailyChallengesCompleted: 0,
       lastStreakDate: null,
       updatedAt: DateTime.now().toIso8601String(),
     );
@@ -53,9 +62,12 @@ class PlayerProgress {
       'xp_for_next': xpForNext,
       'gems': gems,
       'streak_days': streakDays,
+      'best_streak_days': bestStreakDays,
       'total_pushups': totalPushups,
       'total_squats': totalSquats,
       'total_jumping_jacks': totalJumpingJacks,
+      'total_workouts_completed': totalWorkoutsCompleted,
+      'total_daily_challenges_completed': totalDailyChallengesCompleted,
       'last_streak_date': lastStreakDate,
       'updated_at': updatedAt,
     };
@@ -70,10 +82,15 @@ class PlayerProgress {
       xpForNext: (map['xp_for_next'] as num?)?.toInt() ?? 100,
       gems: (map['gems'] as num?)?.toInt() ?? 0,
       streakDays: (map['streak_days'] as num?)?.toInt() ?? 0,
+      bestStreakDays: (map['best_streak_days'] as num?)?.toInt() ?? 0,
       totalPushups: (map['total_pushups'] as num?)?.toInt() ?? 0,
       totalSquats: (map['total_squats'] as num?)?.toInt() ?? 0,
       totalJumpingJacks:
           (map['total_jumping_jacks'] as num?)?.toInt() ?? 0,
+      totalWorkoutsCompleted:
+          (map['total_workouts_completed'] as num?)?.toInt() ?? 0,
+      totalDailyChallengesCompleted:
+          (map['total_daily_challenges_completed'] as num?)?.toInt() ?? 0,
       lastStreakDate: map['last_streak_date'] as String?,
       updatedAt: map['updated_at'] as String? ??
           DateTime.now().toIso8601String(),
@@ -88,9 +105,12 @@ class PlayerProgress {
     int? xpForNext,
     int? gems,
     int? streakDays,
+    int? bestStreakDays,
     int? totalPushups,
     int? totalSquats,
     int? totalJumpingJacks,
+    int? totalWorkoutsCompleted,
+    int? totalDailyChallengesCompleted,
     String? lastStreakDate,
     String? updatedAt,
   }) {
@@ -102,9 +122,14 @@ class PlayerProgress {
       xpForNext: xpForNext ?? this.xpForNext,
       gems: gems ?? this.gems,
       streakDays: streakDays ?? this.streakDays,
+      bestStreakDays: bestStreakDays ?? this.bestStreakDays,
       totalPushups: totalPushups ?? this.totalPushups,
       totalSquats: totalSquats ?? this.totalSquats,
       totalJumpingJacks: totalJumpingJacks ?? this.totalJumpingJacks,
+      totalWorkoutsCompleted:
+          totalWorkoutsCompleted ?? this.totalWorkoutsCompleted,
+      totalDailyChallengesCompleted:
+          totalDailyChallengesCompleted ?? this.totalDailyChallengesCompleted,
       lastStreakDate: lastStreakDate ?? this.lastStreakDate,
       updatedAt: updatedAt ?? this.updatedAt,
     );
