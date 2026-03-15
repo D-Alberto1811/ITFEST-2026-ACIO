@@ -146,7 +146,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final welcomeItem = _HomeNotificationItem(
       id: 'welcome_$userId',
       title: 'Welcome!',
-      message: 'Welcome $name! Your account is ready. Let’s start training.',
+      message: 'Welcome $name! Your account is ready. Letï¿½s start training.',
       createdAt: DateTime.now().toIso8601String(),
       isRead: false,
     );
@@ -164,36 +164,43 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<Achievement> _getUnlockedAchievementsFromProgress({
-    required int levelValue,
-    required int xpValue,
-    required int totalXpValue,
-    required int xpForNextValue,
-    required int gemsValue,
-    required int streakDaysValue,
-    required int totalPushupsValue,
-    required int totalSquatsValue,
-    required int totalJumpingJacksValue,
-    required String? lastStreakDateValue,
-  }) {
-    final tempProgress = PlayerProgress(
-      userId: _currentUser?.id ?? 0,
-      level: levelValue,
-      xp: xpValue,
-      totalXp: totalXpValue,
-      xpForNext: xpForNextValue,
-      gems: gemsValue,
-      streakDays: streakDaysValue,
-      totalPushups: totalPushupsValue,
-      totalSquats: totalSquatsValue,
-      totalJumpingJacks: totalJumpingJacksValue,
-      lastStreakDate: lastStreakDateValue,
-      updatedAt: DateTime.now().toIso8601String(),
-    );
+  required int levelValue,
+  required int xpValue,
+  required int totalXpValue,
+  required int xpForNextValue,
+  required int gemsValue,
+  required int streakDaysValue,
+  required int totalPushupsValue,
+  required int totalSquatsValue,
+  required int totalJumpingJacksValue,
+  required String? lastStreakDateValue,
+}) {
+  final userId = _currentUser?.id ?? 0;
 
-    return achievementCatalog
-        .where((achievement) => achievement.isUnlocked(tempProgress))
-        .toList();
-  }
+  final tempProgress = PlayerProgress(
+    userId: userId,
+    level: levelValue,
+    xp: xpValue,
+    totalXp: totalXpValue,
+    xpForNext: xpForNextValue,
+    gems: gemsValue,
+    streakDays: streakDaysValue,
+    bestStreakDays: bestStreakDays > streakDaysValue
+        ? bestStreakDays
+        : streakDaysValue,
+    totalPushups: totalPushupsValue,
+    totalSquats: totalSquatsValue,
+    totalJumpingJacks: totalJumpingJacksValue,
+    totalWorkoutsCompleted: totalWorkoutsCompleted,
+    totalDailyChallengesCompleted: totalDailyChallengesCompleted,
+    lastStreakDate: lastStreakDateValue,
+    updatedAt: DateTime.now().toIso8601String(),
+  );
+
+  return achievementCatalog
+      .where((achievement) => achievement.isUnlocked(tempProgress))
+      .toList();
+}
 
   Future<void> _addAchievementNotifications({
     required List<Achievement> beforeAchievements,
