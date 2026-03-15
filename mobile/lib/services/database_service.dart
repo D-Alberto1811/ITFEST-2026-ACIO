@@ -10,7 +10,7 @@ class DatabaseService {
   static final DatabaseService instance = DatabaseService._();
 
   static const String _databaseName = 'fitlingo.db';
-  static const int _databaseVersion = 5;
+  static const int _databaseVersion = 6;
 
   static const String usersTable = 'users';
   static const String playerProgressTable = 'player_progress';
@@ -90,6 +90,24 @@ class DatabaseService {
         'last_streak_date',
       );
     }
+
+    if (oldVersion < 6) {
+      await _addIntegerColumnIfMissing(
+        db,
+        playerProgressTable,
+        'best_streak_days',
+      );
+      await _addIntegerColumnIfMissing(
+        db,
+        playerProgressTable,
+        'total_workouts_completed',
+      );
+      await _addIntegerColumnIfMissing(
+        db,
+        playerProgressTable,
+        'total_daily_challenges_completed',
+      );
+    }
   }
 
   Future<bool> _columnExists(Database db, String table, String column) async {
@@ -161,9 +179,12 @@ class DatabaseService {
         xp_for_next INTEGER NOT NULL,
         gems INTEGER NOT NULL,
         streak_days INTEGER NOT NULL,
+        best_streak_days INTEGER NOT NULL DEFAULT 0,
         total_pushups INTEGER NOT NULL DEFAULT 0,
         total_squats INTEGER NOT NULL DEFAULT 0,
         total_jumping_jacks INTEGER NOT NULL DEFAULT 0,
+        total_workouts_completed INTEGER NOT NULL DEFAULT 0,
+        total_daily_challenges_completed INTEGER NOT NULL DEFAULT 0,
         last_streak_date TEXT,
         updated_at TEXT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES $usersTable(id) ON DELETE CASCADE

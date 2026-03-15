@@ -35,10 +35,13 @@ class _HomeScreenState extends State<HomeScreen> {
   int xpForNext = 100;
   int gems = 0;
   int streakDays = 0;
+  int bestStreakDays = 0;
 
   int totalPushups = 0;
   int totalSquats = 0;
   int totalJumpingJacks = 0;
+  int totalWorkoutsCompleted = 0;
+  int totalDailyChallengesCompleted = 0;
   String? lastStreakDate;
 
   Set<int> completedQuestIds = <int>{};
@@ -78,9 +81,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 streakDays = progressRes.streakDays;
                 completedQuestIds = progressRes.completedQuestIds.toSet();
 
+                bestStreakDays = localProgress.bestStreakDays > progressRes.streakDays
+                    ? localProgress.bestStreakDays
+                    : progressRes.streakDays;
                 totalPushups = localProgress.totalPushups;
                 totalSquats = localProgress.totalSquats;
                 totalJumpingJacks = localProgress.totalJumpingJacks;
+                totalWorkoutsCompleted = localProgress.totalWorkoutsCompleted > 0
+                    ? localProgress.totalWorkoutsCompleted
+                    : progressRes.completedQuestIds.length;
+                totalDailyChallengesCompleted =
+                    localProgress.totalDailyChallengesCompleted > 0
+                        ? localProgress.totalDailyChallengesCompleted
+                        : progressRes.completedQuestIds
+                            .where((questId) =>
+                                _dailyQuests.any((quest) => quest.id == questId))
+                            .length;
                 lastStreakDate = localProgress.lastStreakDate;
 
                 _isLoadingUser = false;
@@ -106,9 +122,22 @@ class _HomeScreenState extends State<HomeScreen> {
           gems = progress.gems;
           streakDays = progress.streakDays;
           completedQuestIds = questIds;
+          bestStreakDays = progress.bestStreakDays > progress.streakDays
+              ? progress.bestStreakDays
+              : progress.streakDays;
           totalPushups = progress.totalPushups;
           totalSquats = progress.totalSquats;
           totalJumpingJacks = progress.totalJumpingJacks;
+          totalWorkoutsCompleted = progress.totalWorkoutsCompleted > 0
+              ? progress.totalWorkoutsCompleted
+              : questIds.length;
+          totalDailyChallengesCompleted =
+              progress.totalDailyChallengesCompleted > 0
+                  ? progress.totalDailyChallengesCompleted
+                  : questIds
+                      .where((questId) =>
+                          _dailyQuests.any((quest) => quest.id == questId))
+                      .length;
           lastStreakDate = progress.lastStreakDate;
           _isLoadingUser = false;
         });
@@ -148,9 +177,12 @@ class _HomeScreenState extends State<HomeScreen> {
       xpForNext: xpForNext,
       gems: gems,
       streakDays: streakDays,
+      bestStreakDays: bestStreakDays,
       totalPushups: totalPushups,
       totalSquats: totalSquats,
       totalJumpingJacks: totalJumpingJacks,
+      totalWorkoutsCompleted: totalWorkoutsCompleted,
+      totalDailyChallengesCompleted: totalDailyChallengesCompleted,
       lastStreakDate: lastStreakDate,
       updatedAt: DateTime.now().toIso8601String(),
     );
@@ -169,6 +201,24 @@ class _HomeScreenState extends State<HomeScreen> {
       case 'jumping_jack':
         totalJumpingJacks += quest.target;
         break;
+    }
+  }
+
+  bool _isDailyChallenge(Quest quest) {
+    return _dailyQuests.any((dailyQuest) => dailyQuest.id == quest.id);
+  }
+
+  void _applyActivityTotals(Quest quest) {
+    totalWorkoutsCompleted += 1;
+
+    if (_isDailyChallenge(quest)) {
+      totalDailyChallengesCompleted += 1;
+    }
+  }
+
+  void _updateBestStreak() {
+    if (streakDays > bestStreakDays) {
+      bestStreakDays = streakDays;
     }
   }
 
@@ -236,7 +286,9 @@ class _HomeScreenState extends State<HomeScreen> {
             streakDays = res.streakDays;
 
             _applyExerciseTotals(quest);
+            _applyActivityTotals(quest);
             lastStreakDate = _normalizeDate(DateTime.now());
+            _updateBestStreak();
 
             completedQuestIds.add(quest.id);
           });
@@ -263,7 +315,9 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       _applyExerciseTotals(quest);
+      _applyActivityTotals(quest);
       _updateDailyStreak();
+      _updateBestStreak();
       completedQuestIds.add(quest.id);
     });
 
