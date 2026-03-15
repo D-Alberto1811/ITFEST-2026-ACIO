@@ -189,7 +189,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'Log in to continue your FITLINGO journey.',
+                        'Log in to continue your ACIO journey.',
                         style: TextStyle(
                           fontSize: 14,
                           color: Color(0xFF94A3B8),

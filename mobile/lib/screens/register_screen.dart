@@ -168,7 +168,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'Join FITLINGO and start your fitness adventure.',
+                        'Join ACIO and start your fitness adventure.',
                         style: TextStyle(
                           fontSize: 14,
                           color: Color(0xFF94A3B8),
