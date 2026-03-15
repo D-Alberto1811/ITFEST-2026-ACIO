@@ -64,7 +64,7 @@ class StretchTutorialScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '${exercise.durationSeconds}s • ${exercise.bodyArea}',
+                    '${exercise.durationSeconds}s \u2022 ${exercise.bodyArea}',
                     style: const TextStyle(
                       color: _muted,
                       fontSize: 13,
