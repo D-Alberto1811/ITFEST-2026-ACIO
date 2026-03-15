@@ -12,6 +12,8 @@ class WorkoutCameraOverlay extends StatelessWidget {
   final double lastImageHeight;
   final int sensorOrientation;
   final CameraLensDirection lensDirection;
+  /// When false, joints/lines are not drawn (detection can still run elsewhere).
+  final bool showPoseOverlay;
 
   const WorkoutCameraOverlay({
     super.key,
@@ -21,6 +23,7 @@ class WorkoutCameraOverlay extends StatelessWidget {
     required this.lastImageHeight,
     required this.sensorOrientation,
     required this.lensDirection,
+    this.showPoseOverlay = true,
   });
 
   @override
@@ -32,7 +35,7 @@ class WorkoutCameraOverlay extends StatelessWidget {
       aspectRatio: displayAr,
       child: CameraPreview(
         controller,
-        child: lastPose != null
+        child: lastPose != null && showPoseOverlay
             ? IgnorePointer(
                 child: LayoutBuilder(
                   builder: (context, constraints) {

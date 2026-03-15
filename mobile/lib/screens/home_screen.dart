@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,6 +14,7 @@ import '../models/quest.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/local_storage_service.dart';
+import '../services/streak_reminder_notification_service.dart';
 import '../widgets/home/home_daily_quests_tab.dart';
 import '../widgets/home/home_hero_card.dart';
 import '../widgets/home/home_section_headers.dart';
@@ -20,8 +22,7 @@ import 'path_screen.dart';
 import 'profile_screen.dart';
 import 'stretching_screen.dart';
 import 'workout_screen.dart';
-import 'worldwide_rankings_screen.dart';
-import 'exercise_tutorial_screen.dart';
+import 'worldwide_rankings_screen.dart' show WorldwideRankingsScreen, RankingCategory;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -30,8 +31,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  Timer? _dailyQuestRefreshTimer;
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   AppUser? _currentUser;
   bool _isLoadingUser = true;
 
@@ -67,42 +67,29 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _refreshDailyQuests(force: true);
-    _startDailyQuestRefreshWatcher();
+    WidgetsBinding.instance.addObserver(this);
     _loadCurrentUserAndProgress();
   }
 
   @override
   void dispose() {
-    _dailyQuestRefreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  void _startDailyQuestRefreshWatcher() {
-    _dailyQuestRefreshTimer?.cancel();
-    _dailyQuestRefreshTimer = Timer.periodic(
-      const Duration(seconds: 10),
-      (_) => _refreshDailyQuests(),
-    );
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _currentUser != null) {
+      StreakReminderNotificationService.instance.scheduleStreakReminder();
+    }
   }
 
-  void _refreshDailyQuests({bool force = false}) {
-    final nextCycle = currentDailyQuestCycle();
-    if (!force && nextCycle == _dailyQuestCycle && _dailyQuests.isNotEmpty) {
-      return;
-    }
+  Future<void> _scheduleStreakReminderIfLoggedIn() async {
+    if (_currentUser == null) return;
+    await StreakReminderNotificationService.instance.requestPermissions();
+    await StreakReminderNotificationService.instance.scheduleStreakReminder();
+  }
 
-    final nextQuests = buildDailyQuestsForCycle(
-      userId: _currentUser?.id ?? 0,
-      cycle: nextCycle,
-    );
-
-    if (!mounted && !force) return;
-
-    setState(() {
-      _dailyQuestCycle = nextCycle;
-      _dailyQuests = nextQuests;
-    });
   String _notificationsStorageKey(int userId) {
     return 'home_notifications_user_$userId';
   }
@@ -178,6 +165,16 @@ class _HomeScreenState extends State<HomeScreen> {
     await _persistNotificationsForUser(user.id!, updated);
   }
 
+  Future<void> _clearAllNotifications() async {
+    final user = _currentUser;
+    if (user == null || user.id == null) return;
+    if (!mounted) return;
+    setState(() {
+      _notifications = [];
+    });
+    await _persistNotificationsForUser(user.id!, []);
+  }
+
   Future<void> _ensureWelcomeNotificationForUser(int userId, String name) async {
     final prefs = await SharedPreferences.getInstance();
     final alreadyCreated = prefs.getBool(_welcomeNotificationKey(userId)) ?? false;
@@ -187,7 +184,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final welcomeItem = _HomeNotificationItem(
       id: 'welcome_$userId',
       title: 'Welcome!',
-      message: 'Welcome $name! Your account is ready. Let�s start training.',
+      message:
+          'Welcome $name! Your account is ready. Let\'s start training.',
       createdAt: DateTime.now().toIso8601String(),
       isRead: false,
     );
@@ -271,9 +269,11 @@ class _HomeScreenState extends State<HomeScreen> {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) {
+      builder: (sheetContext) {
+        final bottomSafe = MediaQuery.of(sheetContext).padding.bottom;
+        final extraBottom = Platform.isIOS ? bottomSafe + 12 : 24.0;
         return Container(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+          padding: EdgeInsets.fromLTRB(20, 20, 20, extraBottom),
           decoration: const BoxDecoration(
             color: Color(0xFF111827),
             borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -285,6 +285,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           child: SafeArea(
             top: false,
+            bottom: true,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -297,16 +298,35 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Notifications',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const Text(
+                      'Notifications',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
-                  ),
+                    if (_notifications.isNotEmpty)
+                      TextButton(
+                        onPressed: () async {
+                          await _clearAllNotifications();
+                          if (mounted) setState(() {});
+                          if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+                        },
+                        child: const Text(
+                          'Clear all',
+                          style: TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 if (_notifications.isEmpty)
@@ -439,6 +459,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 user.id!,
                 user.name.trim().isEmpty ? 'Athlete' : user.name.trim(),
               );
+              _scheduleStreakReminderIfLoggedIn();
               return;
             }
           }
@@ -489,6 +510,7 @@ class _HomeScreenState extends State<HomeScreen> {
           user.id!,
           user.name.trim().isEmpty ? 'Athlete' : user.name.trim(),
         );
+        _scheduleStreakReminderIfLoggedIn();
         return;
       }
 
@@ -856,34 +878,35 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _HomeTopBar(
-                    streakDays: streakDays,
-                    gems: gems,
-                    unreadNotifications: _unreadNotificationCount,
-                    onNotificationsTap: _openNotificationsSheet,
-                    onProfileTap: _openProfile,
-                  ),
-                  const SizedBox(height: 20),
-                  if (_selectedTabIndex == 0) ...[
-                    HomeHeroCard(
-                      displayName: displayName,
-                      level: level,
-                      xp: xp,
-                      xpForNext: xpForNext,
+            if (_selectedTabIndex < 2)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _HomeTopBar(
+                      streakDays: streakDays,
+                      gems: gems,
+                      unreadNotifications: _unreadNotificationCount,
+                      onNotificationsTap: _openNotificationsSheet,
+                      onProfileTap: _openProfile,
                     ),
                     const SizedBox(height: 20),
-                    const HomeDailySectionHeader(),
-                  ] else ...[
-                    const HomePathSectionHeader(),
+                    if (_selectedTabIndex == 0) ...[
+                      HomeHeroCard(
+                        displayName: displayName,
+                        level: level,
+                        xp: xp,
+                        xpForNext: xpForNext,
+                      ),
+                      const SizedBox(height: 20),
+                      const HomeDailySectionHeader(),
+                    ] else ...[
+                      const HomePathSectionHeader(),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
             Expanded(
               child: IndexedStack(
                 index: _selectedTabIndex,
@@ -898,22 +921,38 @@ class _HomeScreenState extends State<HomeScreen> {
                     completedQuestIds: completedQuestIds,
                     onQuestTap: _openWorkout,
                   ),
+                  const StretchingScreen(),
+                  _currentUser != null
+                      ? WorldwideRankingsScreen(
+                          user: _currentUser!,
+                          currentUserExerciseTotals: {
+                            RankingCategory.pushUps: totalPushups,
+                            RankingCategory.squats: totalSquats,
+                            RankingCategory.jumpingJacks: totalJumpingJacks,
+                          },
+                        )
+                      : const SizedBox.shrink(),
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: SafeArea(
-                top: false,
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
                 child: _HomeBottomDock(
                   selectedIndex: _selectedTabIndex,
                   onTabSelected: (index) {
+                    if (index == 3 && _currentUser == null) return;
                     setState(() {
                       _selectedTabIndex = index;
                     });
                   },
-                  onStretchTap: _openStretching,
-                  onLeaderboardTap: _openWorldwideRankings,
+                  onStretchTap: () => setState(() => _selectedTabIndex = 2),
+                  onLeaderboardTap: () {
+                    if (_currentUser != null) {
+                      setState(() => _selectedTabIndex = 3);
+                    }
+                  },
                 ),
               ),
             ),
@@ -1123,19 +1162,11 @@ class _HomeBottomDock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 74,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFF111827),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFF1F2937)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 16,
-            offset: Offset(0, 8),
-          ),
-        ],
+        color: Colors.transparent,
       ),
       child: Row(
         children: [
@@ -1164,7 +1195,7 @@ class _HomeBottomDock extends StatelessWidget {
           Expanded(
             child: _DockIconButton(
               icon: Icons.self_improvement_rounded,
-              isSelected: false,
+              isSelected: selectedIndex == 2,
               onTap: onStretchTap,
               selectedBorderColor: const Color(0xFF8B5CF6),
               selectedIconColor: const Color(0xFF8B5CF6),
@@ -1174,7 +1205,7 @@ class _HomeBottomDock extends StatelessWidget {
           Expanded(
             child: _DockIconButton(
               icon: Icons.emoji_events_rounded,
-              isSelected: false,
+              isSelected: selectedIndex == 3,
               onTap: onLeaderboardTap,
               selectedBorderColor: const Color(0xFFFACC15),
               selectedIconColor: const Color(0xFFFACC15),

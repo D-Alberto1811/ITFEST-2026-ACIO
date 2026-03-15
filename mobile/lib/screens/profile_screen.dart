@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -617,7 +619,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           : CustomScrollView(
               slivers: [
                 SliverToBoxAdapter(
-                  child: _buildTopHeader(progress),
+                  child: _buildTopHeader(context, progress),
                 ),
                 SliverToBoxAdapter(
                   child: Transform.translate(
@@ -656,10 +658,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildTopHeader(PlayerProgress progress) {
+  Widget _buildTopHeader(BuildContext context, PlayerProgress progress) {
+    final topPadding = Platform.isIOS ? MediaQuery.of(context).padding.top : 0.0;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+      padding: EdgeInsets.fromLTRB(16, 18 + topPadding, 16, 0),
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [

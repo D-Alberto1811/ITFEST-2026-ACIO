@@ -3,8 +3,10 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/quest.dart';
+import '../../services/auth_service.dart';
 import '../../services/exercise_counter.dart' show ExerciseCounter, ExerciseType, SessionGrade;
 import '../../services/pose_service.dart';
 import 'workout_camera_overlay.dart';
@@ -42,6 +44,7 @@ class _WorkoutBaseScreenState extends State<WorkoutBaseScreen> {
   int _lastImageWidth = 1;
   int _lastImageHeight = 1;
   int _frameSkipCounter = 0;
+  bool _showPoseOverlay = true;
 
   @override
   void initState() {
@@ -51,7 +54,21 @@ class _WorkoutBaseScreenState extends State<WorkoutBaseScreen> {
       target: widget.quest.target,
     );
     _poseService = PoseService();
-    _initCamera();
+    _bootstrapCamera();
+  }
+
+  static String _overlaySettingKey(int userId) =>
+      'exercise_overlay_enabled_user_$userId';
+
+  Future<void> _bootstrapCamera() async {
+    final user = await AuthService.instance.getCurrentUser();
+    final userId = user?.id;
+    if (userId != null && mounted) {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool(_overlaySettingKey(userId)) ?? true;
+      if (mounted) setState(() => _showPoseOverlay = enabled);
+    }
+    if (mounted) await _initCamera();
   }
 
   List<CameraDescription> _filterCamerasForSwitch(List<CameraDescription> all) {
@@ -288,6 +305,7 @@ class _WorkoutBaseScreenState extends State<WorkoutBaseScreen> {
                       lastImageHeight: _lastImageHeight.toDouble(),
                       sensorOrientation: _controller!.description.sensorOrientation,
                       lensDirection: _controller!.description.lensDirection,
+                      showPoseOverlay: _showPoseOverlay,
                     ),
                   ),
                 Positioned(
