@@ -1,23 +1,40 @@
-import 'dart:math';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
+import '../config/api_config.dart';
+import '../config/storage_config.dart';
 import '../models/app_user.dart';
+import '../models/player_progress.dart';
+import '../services/auth_service.dart';
+import '../services/database_service.dart';
 
-enum RankingCategory {
-  pushUps,
-  squats,
-  jumpingJacks,
-}
-
+/// Worldwide rankings screen inspired by the attached mockup:
+/// - title + subtitle
+/// - 3 tabs: Push-Ups / Squats / Jumping Jacks
+/// - top 10 visible immediately
+/// - current user shown under the leaderboard when outside top 10
+/// - secondary card: user's ranking across all exercises
+///
+/// Current behavior:
+/// - In SQLite mode, the screen reads real data from local SQLite.
+/// - In server mode, the screen expects a backend leaderboard endpoint.
+///
+/// Expected server response shapes supported:
+/// 1) { "entries": [ { "rank": 1, "name": "...", "score": 1000, "is_current_user": false } ] }
+/// 2) { "leaderboard": [ ... ] }
+/// 3) [ { "rank": 1, "name": "...", "score": 1000 } ]
 class WorldwideRankingsScreen extends StatefulWidget {
   final AppUser user;
-  final Map<RankingCategory, int> currentUserExerciseTotals;
+
+  /// Optional fallback values for the current user.
+  final Map<RankingCategory, int>? currentUserExerciseTotals;
 
   const WorldwideRankingsScreen({
     super.key,
     required this.user,
-    required this.currentUserExerciseTotals,
+    this.currentUserExerciseTotals,
   });
 
   @override
@@ -26,346 +43,486 @@ class WorldwideRankingsScreen extends StatefulWidget {
 }
 
 class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
-  static const Color _bg = Color(0xFF0F172A);
-  static const Color _panel = Color(0xFF111827);
-  static const Color _card = Color(0xFF1E293B);
-  static const Color _border = Color(0xFF334155);
-  static const Color _muted = Color(0xFF94A3B8);
-  static const Color _text = Colors.white;
-  static const Color _accent = Color(0xFF06B6D4);
-  static const Color _gold = Color(0xFFFACC15);
-  static const Color _silver = Color(0xFFE5E7EB);
-  static const Color _bronze = Color(0xFFFB923C);
+  late final RankingsRepository _repository;
+
+  bool _isLoading = true;
+  bool _isRefreshing = false;
+  String? _error;
 
   RankingCategory _selectedCategory = RankingCategory.pushUps;
-
-  late final Map<RankingCategory, List<_RankingEntry>> _cachedRankings;
-  late final Map<RankingCategory, _RankingEntry> _currentUserEntries;
+  LeaderboardSnapshot? _snapshot;
+  PersonalRankingsSummary? _personalSummary;
 
   @override
   void initState() {
     super.initState();
-    _buildRankingsOnce();
+    _repository = isServerMode
+        ? _ServerRankingsRepository(
+            currentUser: widget.user,
+            currentUserTotals: widget.currentUserExerciseTotals,
+          )
+        : _SqliteRankingsRepository(
+            currentUser: widget.user,
+            currentUserTotals: widget.currentUserExerciseTotals,
+          );
+    _loadData();
   }
 
-  void _buildRankingsOnce() {
-    _cachedRankings = {};
-    _currentUserEntries = {};
+  Future<void> _loadData({bool showRefreshState = false}) async {
+    if (showRefreshState) {
+      setState(() {
+        _isRefreshing = true;
+      });
+    }
 
-    for (final category in RankingCategory.values) {
-      final rankings = _generateRankingsForCategory(category);
-      _cachedRankings[category] = rankings;
-      _currentUserEntries[category] =
-          rankings.firstWhere((entry) => entry.isCurrentUser);
+    try {
+      final results = await Future.wait([
+        _repository.getLeaderboard(_selectedCategory),
+        _repository.getPersonalSummary(),
+      ]);
+
+      if (!mounted) return;
+
+      setState(() {
+        _snapshot = results[0] as LeaderboardSnapshot;
+        _personalSummary = results[1] as PersonalRankingsSummary;
+        _error = null;
+        _isLoading = false;
+        _isRefreshing = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString().replaceFirst('Exception: ', '');
+        _isLoading = false;
+        _isRefreshing = false;
+      });
     }
   }
 
-  List<_RankingEntry> _generateRankingsForCategory(RankingCategory category) {
-    final random = Random(category.index + 37);
+  Future<void> _onCategoryChanged(RankingCategory category) async {
+    if (_selectedCategory == category) return;
 
-    final names = <String>[
-      'Alex',
-      'Maya',
-      'Chris',
-      'Jordan',
-      'Taylor',
-      'Sam',
-      'Emma',
-      'Noah',
-      'Olivia',
-      'Liam',
-      'Ava',
-      'Ethan',
-      'Sophia',
-      'James',
-      'Lucas',
-      'Mila',
-      'Amelia',
-      'Daniel',
-      'Ella',
-      'Mason',
-      'David',
-      'Sofia',
-      'Henry',
-      'Chloe',
-      'Grace',
-      'Leo',
-      'Aria',
-      'Sebastian',
-      'Zoe',
-      'Benjamin',
-    ];
-
-    final userName = widget.user.name.trim().isEmpty
-        ? 'You'
-        : widget.user.name.trim();
-
-    final userScore = widget.currentUserExerciseTotals[category] ?? 0;
-
-    final baseMin = switch (category) {
-      RankingCategory.pushUps => 1200,
-      RankingCategory.squats => 1800,
-      RankingCategory.jumpingJacks => 1500,
-    };
-
-    final baseMax = switch (category) {
-      RankingCategory.pushUps => 6200,
-      RankingCategory.squats => 8600,
-      RankingCategory.jumpingJacks => 7600,
-    };
-
-    final entries = <_RankingEntry>[];
-
-    for (var i = 0; i < names.length; i++) {
-      final value = baseMin + random.nextInt(baseMax - baseMin + 1);
-      entries.add(
-        _RankingEntry(
-          name: '${names[i]} ${String.fromCharCode(65 + (i % 8))}.',
-          score: value,
-          isCurrentUser: false,
-        ),
-      );
-    }
-
-    entries.add(
-      _RankingEntry(
-        name: userName,
-        score: userScore,
-        isCurrentUser: true,
-      ),
-    );
-
-    entries.sort((a, b) => b.score.compareTo(a.score));
-
-    return List<_RankingEntry>.generate(entries.length, (index) {
-      final entry = entries[index];
-      return entry.copyWith(rank: index + 1);
+    setState(() {
+      _selectedCategory = category;
+      _isLoading = true;
+      _error = null;
     });
-  }
 
-  String _categoryTitle(RankingCategory category) {
-    switch (category) {
-      case RankingCategory.pushUps:
-        return 'Push-ups';
-      case RankingCategory.squats:
-        return 'Squats';
-      case RankingCategory.jumpingJacks:
-        return 'Jumping Jacks';
-    }
-  }
-
-  IconData _categoryIcon(RankingCategory category) {
-    switch (category) {
-      case RankingCategory.pushUps:
-        return Icons.fitness_center_rounded;
-      case RankingCategory.squats:
-        return Icons.accessibility_new_rounded;
-      case RankingCategory.jumpingJacks:
-        return Icons.directions_run_rounded;
-    }
-  }
-
-  Color _podiumColor(int rank) {
-    switch (rank) {
-      case 1:
-        return _gold;
-      case 2:
-        return _silver;
-      case 3:
-        return _bronze;
-      default:
-        return _accent;
-    }
+    await _loadData();
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentEntries = _cachedRankings[_selectedCategory]!;
-    final currentUserEntry = _currentUserEntries[_selectedCategory]!;
-
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: const Color(0xFF0F172A),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0F172A),
+        elevation: 0,
+        title: const Text(
+          'Worldwide Rankings',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
       body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      _TopCircleButton(
-                        icon: Icons.arrow_back_rounded,
-                        onTap: () => Navigator.of(context).pop(),
-                      ),
-                      const Spacer(),
-                      const Text(
-                        'Leaderboard',
-                        style: TextStyle(
-                          color: _text,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const Spacer(),
-                      const SizedBox(width: 46),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  _buildCurrentUserCard(currentUserEntry),
-                  const SizedBox(height: 18),
-                  _buildCategorySelector(),
-                ],
+        child: RefreshIndicator(
+          onRefresh: () => _loadData(showRefreshState: true),
+          color: const Color(0xFF06B6D4),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+            children: [
+              const Text(
+                'Compare your performance with players around the world.',
+                style: TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 15,
+                  height: 1.45,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: IndexedStack(
-                index: RankingCategory.values.indexOf(_selectedCategory),
-                children: RankingCategory.values.map((category) {
-                  return _buildRankingList(
-                    category,
-                    _cachedRankings[category]!,
-                  );
-                }).toList(),
+              const SizedBox(height: 20),
+              _CategoryTabs(
+                selectedCategory: _selectedCategory,
+                onCategorySelected: _onCategoryChanged,
               ),
-            ),
-          ],
+              const SizedBox(height: 20),
+              if (_isLoading && _snapshot == null) ...[
+                const _LoadingCard(),
+              ] else if (_error != null) ...[
+                _ErrorCard(
+                  message: _error!,
+                  onRetry: _loadData,
+                ),
+              ] else if (_snapshot != null) ...[
+                _LeaderboardCard(
+                  snapshot: _snapshot!,
+                  isRefreshing: _isRefreshing,
+                ),
+                const SizedBox(height: 18),
+                if (_personalSummary != null)
+                  _YourRankingsCard(summary: _personalSummary!),
+              ],
+            ],
+          ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildCurrentUserCard(_RankingEntry userEntry) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: _panel,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: _border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 54,
-            height: 54,
-            decoration: BoxDecoration(
-              color: _card,
-              shape: BoxShape.circle,
-              border: Border.all(color: _border),
+enum RankingCategory {
+  pushUps('Push-Ups', 'pushups'),
+  squats('Squats', 'squats'),
+  jumpingJacks('Jumping Jacks', 'jumping_jacks');
+
+  final String label;
+  final String apiKey;
+
+  const RankingCategory(this.label, this.apiKey);
+}
+
+class LeaderboardEntry {
+  final int rank;
+  final String playerName;
+  final int score;
+  final bool isCurrentUser;
+
+  const LeaderboardEntry({
+    required this.rank,
+    required this.playerName,
+    required this.score,
+    this.isCurrentUser = false,
+  });
+}
+
+class LeaderboardSnapshot {
+  final RankingCategory category;
+  final List<LeaderboardEntry> topEntries;
+  final LeaderboardEntry currentUserEntry;
+
+  const LeaderboardSnapshot({
+    required this.category,
+    required this.topEntries,
+    required this.currentUserEntry,
+  });
+
+  bool get isCurrentUserInTopTen =>
+      topEntries.any((entry) => entry.isCurrentUser || entry.rank == currentUserEntry.rank);
+
+  LeaderboardEntry? get previousEntry {
+    if (currentUserEntry.rank <= 1) return null;
+
+    final List<LeaderboardEntry> pool = <LeaderboardEntry>[
+      ...topEntries,
+      currentUserEntry,
+    ]..sort((a, b) => a.rank.compareTo(b.rank));
+
+    for (final entry in pool) {
+      if (entry.rank == currentUserEntry.rank - 1) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  int? get scoreNeededToReachPrevious {
+    final previous = previousEntry;
+    if (previous == null) return null;
+    final difference = previous.score - currentUserEntry.score;
+    return difference < 0 ? 0 : difference + 1;
+  }
+}
+
+class PersonalRankingsSummary {
+  final Map<RankingCategory, LeaderboardEntry> rankings;
+
+  const PersonalRankingsSummary({
+    required this.rankings,
+  });
+}
+
+abstract class RankingsRepository {
+  Future<LeaderboardSnapshot> getLeaderboard(RankingCategory category);
+
+  Future<PersonalRankingsSummary> getPersonalSummary();
+}
+
+class _SqliteRankingsRepository implements RankingsRepository {
+  final AppUser currentUser;
+  final Map<RankingCategory, int>? currentUserTotals;
+
+  _SqliteRankingsRepository({
+    required this.currentUser,
+    this.currentUserTotals,
+  });
+
+  final DatabaseService _database = DatabaseService.instance;
+
+  @override
+  Future<LeaderboardSnapshot> getLeaderboard(RankingCategory category) async {
+    final users = await _database.getAllUsers();
+
+    final entries = <LeaderboardEntry>[];
+
+    for (final user in users) {
+      if (user.id == null) continue;
+
+      final progress = await _database.getPlayerProgress(user.id!) ??
+          PlayerProgress.initial(user.id!);
+
+      final score = _scoreFromProgress(progress, category);
+
+      entries.add(
+        LeaderboardEntry(
+          rank: 0,
+          playerName: _displayName(user),
+          score: score,
+          isCurrentUser: user.id == currentUser.id,
+        ),
+      );
+    }
+
+    if (!entries.any((entry) => entry.isCurrentUser)) {
+      final fallbackScore = currentUserTotals?[category] ?? 0;
+      entries.add(
+        LeaderboardEntry(
+          rank: 0,
+          playerName: _displayName(currentUser),
+          score: fallbackScore,
+          isCurrentUser: true,
+        ),
+      );
+    }
+
+    entries.sort((a, b) => b.score.compareTo(a.score));
+
+    final rankedEntries = List<LeaderboardEntry>.generate(entries.length, (index) {
+      final entry = entries[index];
+      return LeaderboardEntry(
+        rank: index + 1,
+        playerName: entry.playerName,
+        score: entry.score,
+        isCurrentUser: entry.isCurrentUser,
+      );
+    });
+
+    final currentUserEntry = rankedEntries.firstWhere(
+      (entry) => entry.isCurrentUser,
+      orElse: () => rankedEntries.isNotEmpty
+          ? rankedEntries.first
+          : LeaderboardEntry(
+              rank: 1,
+              playerName: _displayName(currentUser),
+              score: currentUserTotals?[category] ?? 0,
+              isCurrentUser: true,
             ),
-            child: Center(
-              child: Text(
-                '#${userEntry.rank}',
-                style: const TextStyle(
-                  color: _accent,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 16,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Your position',
-                  style: TextStyle(
-                    color: _muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  userEntry.name,
-                  style: const TextStyle(
-                    color: _text,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${userEntry.score} ${_categoryTitle(_selectedCategory).toLowerCase()}',
-                  style: const TextStyle(
-                    color: _muted,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Icon(
-            _categoryIcon(_selectedCategory),
-            color: _accent,
-            size: 24,
-          ),
-        ],
-      ),
+    );
+
+    return LeaderboardSnapshot(
+      category: category,
+      topEntries: rankedEntries.take(10).toList(),
+      currentUserEntry: currentUserEntry,
     );
   }
 
-  Widget _buildCategorySelector() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: _panel,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _border),
-      ),
+  @override
+  Future<PersonalRankingsSummary> getPersonalSummary() async {
+    final results = await Future.wait(
+      RankingCategory.values.map(getLeaderboard),
+    );
+
+    return PersonalRankingsSummary(
+      rankings: {
+        for (final snapshot in results) snapshot.category: snapshot.currentUserEntry,
+      },
+    );
+  }
+
+  int _scoreFromProgress(PlayerProgress progress, RankingCategory category) {
+    switch (category) {
+      case RankingCategory.pushUps:
+        return progress.totalPushups;
+      case RankingCategory.squats:
+        return progress.totalSquats;
+      case RankingCategory.jumpingJacks:
+        return progress.totalJumpingJacks;
+    }
+  }
+
+  String _displayName(AppUser user) {
+    final trimmed = user.name.trim();
+    return trimmed.isEmpty ? 'Unknown Athlete' : trimmed;
+  }
+}
+
+class _ServerRankingsRepository implements RankingsRepository {
+  final AppUser currentUser;
+  final Map<RankingCategory, int>? currentUserTotals;
+
+  _ServerRankingsRepository({
+    required this.currentUser,
+    this.currentUserTotals,
+  });
+
+  @override
+  Future<LeaderboardSnapshot> getLeaderboard(RankingCategory category) async {
+    final token = await AuthService.instance.getToken();
+    if (token == null || token.isEmpty) {
+      throw Exception('Missing server token.');
+    }
+
+    final uri = Uri.parse(
+      '$apiBaseUrl/gamification/leaderboard?category=${category.apiKey}',
+    );
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Server leaderboard endpoint is not available yet. Add /gamification/leaderboard on backend.',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    final rawList = _extractEntriesList(decoded);
+
+    final entries = <LeaderboardEntry>[];
+    for (var i = 0; i < rawList.length; i++) {
+      final item = Map<String, dynamic>.from(rawList[i] as Map);
+      final rank = (item['rank'] as num?)?.toInt() ?? (i + 1);
+      final name = (item['name'] ??
+              item['player_name'] ??
+              item['username'] ??
+              item['display_name'] ??
+              '')
+          .toString();
+      final score = (item['score'] ??
+                  item['value'] ??
+                  item['total'] ??
+                  item['count'] ??
+                  item['reps'] ??
+                  0)
+              as num? ??
+          0;
+      final userId = (item['user_id'] as num?)?.toInt();
+      final isCurrent = item['is_current_user'] == true ||
+          item['isCurrentUser'] == true ||
+          (userId != null && currentUser.id != null && userId == currentUser.id) ||
+          name.trim() == currentUser.name.trim();
+
+      entries.add(
+        LeaderboardEntry(
+          rank: rank,
+          playerName: name.trim().isEmpty ? 'Unknown Athlete' : name.trim(),
+          score: score.toInt(),
+          isCurrentUser: isCurrent,
+        ),
+      );
+    }
+
+    if (entries.isEmpty) {
+      throw Exception('No leaderboard data returned from server.');
+    }
+
+    entries.sort((a, b) => a.rank.compareTo(b.rank));
+
+    LeaderboardEntry? currentEntry;
+    for (final entry in entries) {
+      if (entry.isCurrentUser) {
+        currentEntry = entry;
+        break;
+      }
+    }
+
+    currentEntry ??= LeaderboardEntry(
+      rank: entries.length + 1,
+      playerName: currentUser.name.trim().isEmpty ? 'You' : currentUser.name.trim(),
+      score: currentUserTotals?[category] ?? 0,
+      isCurrentUser: true,
+    );
+
+    return LeaderboardSnapshot(
+      category: category,
+      topEntries: entries.take(10).toList(),
+      currentUserEntry: currentEntry,
+    );
+  }
+
+  @override
+  Future<PersonalRankingsSummary> getPersonalSummary() async {
+    final results = await Future.wait(
+      RankingCategory.values.map(getLeaderboard),
+    );
+
+    return PersonalRankingsSummary(
+      rankings: {
+        for (final snapshot in results) snapshot.category: snapshot.currentUserEntry,
+      },
+    );
+  }
+
+  List<dynamic> _extractEntriesList(dynamic decoded) {
+    if (decoded is List) return decoded;
+    if (decoded is Map<String, dynamic>) {
+      final entries = decoded['entries'];
+      if (entries is List) return entries;
+
+      final leaderboard = decoded['leaderboard'];
+      if (leaderboard is List) return leaderboard;
+
+      final data = decoded['data'];
+      if (data is List) return data;
+    }
+    return const [];
+  }
+}
+
+class _CategoryTabs extends StatelessWidget {
+  final RankingCategory selectedCategory;
+  final ValueChanged<RankingCategory> onCategorySelected;
+
+  const _CategoryTabs({
+    required this.selectedCategory,
+    required this.onCategorySelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
       child: Row(
         children: RankingCategory.values.map((category) {
-          final isSelected = _selectedCategory == category;
-
-          return Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(
-                right: category != RankingCategory.values.last ? 8 : 0,
-              ),
-              child: GestureDetector(
-                onTap: () {
-                  if (_selectedCategory == category) return;
-                  setState(() {
-                    _selectedCategory = category;
-                  });
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 12,
+          final isSelected = category == selectedCategory;
+          return Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: GestureDetector(
+              onTap: () => onCategorySelected(category),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? const Color(0xFF06B6D4).withOpacity(0.15)
+                      : const Color(0xFF111827),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isSelected
+                        ? const Color(0xFF06B6D4)
+                        : const Color(0xFF334155),
                   ),
-                  decoration: BoxDecoration(
-                    color: isSelected ? _card : _bg,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isSelected ? _accent : _border,
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      Icon(
-                        _categoryIcon(category),
-                        color: isSelected ? _accent : _muted,
-                        size: 20,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _categoryTitle(category),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: isSelected ? _text : _muted,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
+                ),
+                child: Text(
+                  category.label,
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : const Color(0xFFCBD5E1),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
                   ),
                 ),
               ),
@@ -375,119 +532,136 @@ class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
       ),
     );
   }
+}
 
-  Widget _buildRankingList(
-    RankingCategory category,
-    List<_RankingEntry> entries,
-  ) {
-    return ListView.builder(
-      key: PageStorageKey('rankings_${category.name}'),
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-      itemCount: entries.length,
-      itemBuilder: (context, index) {
-        final entry = entries[index];
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: _buildRankingTile(entry),
-        );
-      },
-    );
-  }
+class _LeaderboardCard extends StatelessWidget {
+  final LeaderboardSnapshot snapshot;
+  final bool isRefreshing;
 
-  Widget _buildRankingTile(_RankingEntry entry) {
-    final highlight = entry.isCurrentUser;
-    final isTopThree = entry.rank <= 3;
+  const _LeaderboardCard({
+    required this.snapshot,
+    required this.isRefreshing,
+  });
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      padding: const EdgeInsets.all(16),
+  @override
+  Widget build(BuildContext context) {
+    final currentUser = snapshot.currentUserEntry;
+    final needed = snapshot.scoreNeededToReachPrevious;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: highlight ? _card : _panel,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: highlight
-              ? _accent
-              : isTopThree
-                  ? _podiumColor(entry.rank).withOpacity(0.55)
-                  : _border,
-          width: highlight ? 1.4 : 1,
-        ),
-        boxShadow: highlight
-            ? [
-                BoxShadow(
-                  color: _accent.withOpacity(0.10),
-                  blurRadius: 14,
-                  offset: const Offset(0, 6),
-                ),
-              ]
-            : null,
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFF1F2937)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x22000000),
+            blurRadius: 20,
+            offset: Offset(0, 12),
+          ),
+        ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: _bg,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isTopThree ? _podiumColor(entry.rank) : _border,
-              ),
-            ),
-            child: Center(
-              child: Text(
-                '${entry.rank}',
-                style: TextStyle(
-                  color: isTopThree ? _podiumColor(entry.rank) : _text,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  entry.name,
-                  style: TextStyle(
-                    color: _text,
-                    fontSize: 15,
-                    fontWeight:
-                        highlight ? FontWeight.w900 : FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  highlight ? 'You' : 'Worldwide athlete',
-                  style: const TextStyle(
-                    color: _muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
           Row(
             children: [
-              Icon(
-                _categoryIcon(_selectedCategory),
-                color: isTopThree ? _podiumColor(entry.rank) : _accent,
-                size: 18,
-              ),
-              const SizedBox(width: 8),
               Text(
-                '${entry.score}',
+                snapshot.category.label,
                 style: const TextStyle(
-                  color: _text,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const Spacer(),
+              if (isRefreshing)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFF06B6D4),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...snapshot.topEntries.map(
+            (entry) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _LeaderboardRow(entry: entry),
+            ),
+          ),
+          if (!snapshot.isCurrentUserInTopTen) ...[
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: Divider(color: Color(0xFF334155)),
+            ),
+            _LeaderboardRow(entry: currentUser),
+            if (needed != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                '$needed more to reach #${currentUser.rank - 1}',
+                style: const TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _LeaderboardRow extends StatelessWidget {
+  final LeaderboardEntry entry;
+
+  const _LeaderboardRow({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = entry.isCurrentUser ? Colors.white : const Color(0xFFE5E7EB);
+    final backgroundColor = entry.isCurrentUser
+        ? const Color(0xFF06B6D4).withOpacity(0.12)
+        : Colors.transparent;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 42,
+            child: _RankBadge(rank: entry.rank),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              entry.isCurrentUser ? '${entry.playerName} (You)' : entry.playerName,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 17,
+                fontWeight: entry.isCurrentUser ? FontWeight.w800 : FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            _formatNumber(entry.score),
+            style: TextStyle(
+              color: textColor,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ],
       ),
@@ -495,62 +669,183 @@ class _WorldwideRankingsScreenState extends State<WorldwideRankingsScreen> {
   }
 }
 
-class _RankingEntry {
+class _RankBadge extends StatelessWidget {
   final int rank;
-  final String name;
-  final int score;
-  final bool isCurrentUser;
 
-  const _RankingEntry({
-    this.rank = 0,
-    required this.name,
-    required this.score,
-    required this.isCurrentUser,
-  });
+  const _RankBadge({required this.rank});
 
-  _RankingEntry copyWith({
-    int? rank,
-    String? name,
-    int? score,
-    bool? isCurrentUser,
-  }) {
-    return _RankingEntry(
-      rank: rank ?? this.rank,
-      name: name ?? this.name,
-      score: score ?? this.score,
-      isCurrentUser: isCurrentUser ?? this.isCurrentUser,
+  @override
+  Widget build(BuildContext context) {
+    if (rank <= 3) {
+      final medal = switch (rank) {
+        1 => '🥇',
+        2 => '🥈',
+        _ => '🥉',
+      };
+
+      return Text(
+        medal,
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 24),
+      );
+    }
+
+    return Text(
+      '$rank.',
+      textAlign: TextAlign.center,
+      style: const TextStyle(
+        color: Color(0xFFCBD5E1),
+        fontWeight: FontWeight.w700,
+        fontSize: 16,
+      ),
     );
   }
 }
 
-class _TopCircleButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
+class _YourRankingsCard extends StatelessWidget {
+  final PersonalRankingsSummary summary;
 
-  const _TopCircleButton({
-    required this.icon,
-    required this.onTap,
-  });
+  const _YourRankingsCard({required this.summary});
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: Ink(
-        width: 46,
-        height: 46,
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E293B),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFF334155)),
-        ),
-        child: Icon(
-          icon,
-          color: Colors.white,
-          size: 22,
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFF1F2937)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Your Rankings',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 18),
+          ...RankingCategory.values.map((category) {
+            final entry = summary.rankings[category];
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      category.label,
+                      style: const TextStyle(
+                        color: Color(0xFFE5E7EB),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    entry != null ? '#${entry.rank}' : '—',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingCard extends StatelessWidget {
+  const _LoadingCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 220,
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFF1F2937)),
+      ),
+      child: const Center(
+        child: CircularProgressIndicator(
+          color: Color(0xFF06B6D4),
         ),
       ),
     );
   }
+}
+
+class _ErrorCard extends StatelessWidget {
+  final String message;
+  final Future<void> Function({bool showRefreshState}) onRetry;
+
+  const _ErrorCard({
+    required this.message,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFF7F1D1D)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Something went wrong',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            style: const TextStyle(
+              color: Color(0xFFCBD5E1),
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 14),
+          ElevatedButton(
+            onPressed: () => onRetry(),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF06B6D4),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatNumber(int value) {
+  final text = value.toString();
+  final buffer = StringBuffer();
+
+  for (var i = 0; i < text.length; i++) {
+    final reverseIndex = text.length - i;
+    buffer.write(text[i]);
+    if (reverseIndex > 1 && reverseIndex % 3 == 1) {
+      buffer.write(',');
+    }
+  }
+
+  return buffer.toString();
 }
