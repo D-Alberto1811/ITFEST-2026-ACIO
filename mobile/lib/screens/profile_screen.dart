@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../data/achievements_data.dart';
+import '../models/achievement.dart';
 import '../models/app_user.dart';
 import '../models/player_progress.dart';
 import '../models/quest.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/local_storage_service.dart';
+import '../widgets/achievement_icon.dart';
+import 'achievements_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final AppUser user;
@@ -27,29 +31,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   PlayerProgress? _progress;
   Set<int> _completedQuestIds = <int>{};
 
-  final List<_AchievementPlaceholder> _achievementPlaceholders = const [
-    _AchievementPlaceholder(
-      emoji: '🔥',
-      title: 'Streak Master',
-      targetText: '7 day streak',
-    ),
-    _AchievementPlaceholder(
-      emoji: '⭐',
-      title: 'XP Collector',
-      targetText: 'Reach 500 XP',
-    ),
-    _AchievementPlaceholder(
-      emoji: '💎',
-      title: 'Gem Hunter',
-      targetText: 'Collect 50 gems',
-    ),
-    _AchievementPlaceholder(
-      emoji: '🏆',
-      title: 'Quest Hero',
-      targetText: 'Complete 10 quests',
-    ),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -58,22 +39,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _loadProfileData() async {
     try {
+      final localProgress =
+          await LocalStorageService.instance.getOrCreateProgress(widget.user.id!);
+      final localCompleted =
+          await LocalStorageService.instance.getCompletedQuestIds(widget.user.id!);
+
       final isServer = await AuthService.instance.isServerSession();
       if (isServer) {
         final token = await AuthService.instance.getToken();
         if (token != null) {
           final res = await ApiClient.getProgress(token);
+
           if (res != null && mounted) {
             setState(() {
               _progress = PlayerProgress(
-                userId: res.userId,
+                userId: widget.user.id ?? 0,
                 level: res.level,
                 xp: res.xp,
                 totalXp: res.totalXp,
                 xpForNext: res.xpForNext,
                 gems: res.gems,
                 streakDays: res.streakDays,
-                updatedAt: res.updatedAt,
+                totalPushups: localProgress.totalPushups,
+                totalSquats: localProgress.totalSquats,
+                totalJumpingJacks: localProgress.totalJumpingJacks,
+                lastStreakDate: localProgress.lastStreakDate,
+                updatedAt: DateTime.now().toIso8601String(),
               );
               _completedQuestIds = res.completedQuestIds.toSet();
               _isLoading = false;
@@ -82,29 +73,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
         }
       }
-      final progress =
-          await LocalStorageService.instance.getOrCreateProgress(widget.user.id!);
-      final completed =
-          await LocalStorageService.instance.getCompletedQuestIds(widget.user.id!);
 
       if (!mounted) return;
 
       setState(() {
-        _progress = progress;
-        _completedQuestIds = completed;
+        _progress = localProgress;
+        _completedQuestIds = localCompleted;
         _isLoading = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
+        _progress = PlayerProgress.initial(widget.user.id ?? 0);
+        _completedQuestIds = <int>{};
         _isLoading = false;
       });
     }
   }
 
+  void _openAchievements(PlayerProgress progress) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AchievementsScreen(progress: progress),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final progress = _progress;
+    final progress = _progress ?? PlayerProgress.initial(widget.user.id ?? 0);
     final completedQuestCount = _completedQuestIds.length;
 
     return Scaffold(
@@ -146,7 +144,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             const SizedBox(height: 28),
                             _buildSectionTitle('ACHIEVEMENTS'),
                             const SizedBox(height: 14),
-                            _buildAchievementsRow(),
+                            _buildAchievementsSection(progress),
                           ],
                         ),
                       ),
@@ -269,30 +267,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildStatsRow(PlayerProgress? progress) {
+  Widget _buildStatsRow(PlayerProgress progress) {
     return Row(
       children: [
         Expanded(
           child: _buildMainStat(
-            value: '${progress?.streakDays ?? 0}',
+            value: '${progress.streakDays}',
             label: 'Streak',
           ),
         ),
         Expanded(
           child: _buildMainStat(
-            value: '${progress?.totalXp ?? 0}',
+            value: '${progress.totalXp}',
             label: 'Total XP',
           ),
         ),
         Expanded(
           child: _buildMainStat(
-            value: '${progress?.level ?? 1}',
+            value: '${progress.level}',
             label: 'Level',
           ),
         ),
         Expanded(
           child: _buildMainStat(
-            value: '${progress?.gems ?? 0}',
+            value: '${progress.gems}',
             label: 'Gems',
           ),
         ),
@@ -328,11 +326,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildOverviewCard({
-    required PlayerProgress? progress,
+    required PlayerProgress progress,
     required int completedQuestCount,
   }) {
-    final currentXp = progress?.xp ?? 0;
-    final xpForNext = progress?.xpForNext ?? 100;
+    final currentXp = progress.xp;
+    final xpForNext = progress.xpForNext;
     final progressValue = xpForNext == 0 ? 0.0 : currentXp / xpForNext;
 
     return Container(
@@ -361,13 +359,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Expanded(
                 child: _buildOverviewItem(
                   icon: '🔥',
-                  text: '${progress?.streakDays ?? 0} days',
+                  text: '${progress.streakDays} days',
                 ),
               ),
               Expanded(
                 child: _buildOverviewItem(
                   icon: '💎',
-                  text: '${progress?.gems ?? 0} gems',
+                  text: '${progress.gems} gems',
                 ),
               ),
             ],
@@ -384,7 +382,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Expanded(
                 child: _buildOverviewItem(
                   icon: '⭐',
-                  text: '${progress?.totalXp ?? 0} XP',
+                  text: '${progress.totalXp} XP',
                 ),
               ),
             ],
@@ -458,61 +456,129 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildAchievementsRow() {
-    return SizedBox(
-      height: 145,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: _achievementPlaceholders.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 14),
-        itemBuilder: (context, index) {
-          final item = _achievementPlaceholders[index];
-          return _buildAchievementCard(item);
-        },
+  Widget _buildAchievementsSection(PlayerProgress progress) {
+    final previewAchievements = getPreviewAchievements(
+      progress,
+      limit: 4,
+    );
+    final unlockedCount = getUnlockedAchievementCount(progress);
+
+    return GestureDetector(
+      onTap: () => _openAchievements(progress),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFE7E7E7)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  '$unlockedCount / ${achievementCatalog.length} unlocked',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF4A4A4A),
+                  ),
+                ),
+                const Spacer(),
+                const Text(
+                  'See all',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF58CC02),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 14,
+                  color: Color(0xFF58CC02),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              height: 150,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: previewAchievements.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 14),
+                itemBuilder: (context, index) {
+                  final achievement = previewAchievements[index];
+                  return _buildAchievementPreviewCard(
+                    achievement,
+                    progress,
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildAchievementCard(_AchievementPlaceholder achievement) {
+  Widget _buildAchievementPreviewCard(
+    Achievement achievement,
+    PlayerProgress progress,
+  ) {
+    final isUnlocked = achievement.isUnlocked(progress);
+
     return Container(
       width: 120,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isUnlocked ? Colors.white : const Color(0xFFF2F2F2),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE7E7E7)),
+        border: Border.all(
+          color: isUnlocked
+              ? const Color(0xFFDFF3CF)
+              : const Color(0xFFE1E1E1),
+        ),
       ),
       child: Column(
         children: [
           Container(
             width: 58,
             height: 58,
-            decoration: const BoxDecoration(
-              color: Color(0xFFFFF3BF),
+            decoration: BoxDecoration(
+              color: isUnlocked
+                  ? const Color(0xFFFFF3BF)
+                  : const Color(0xFFE7E7E7),
               shape: BoxShape.circle,
             ),
             child: Center(
-              child: Text(
-                achievement.emoji,
-                style: const TextStyle(fontSize: 28),
+              child: AchievementIcon(
+                iconPath: achievement.iconPath,
+                isUnlocked: isUnlocked,
+                size: 34,
               ),
             ),
           ),
           const SizedBox(height: 12),
           Text(
             achievement.title,
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF4A4A4A),
+              color: isUnlocked
+                  ? const Color(0xFF4A4A4A)
+                  : const Color(0xFF7A7A7A),
             ),
           ),
           const SizedBox(height: 6),
           Text(
-            achievement.targetText,
+            isUnlocked ? 'Unlocked' : achievement.description,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
@@ -527,16 +593,4 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
   }
-}
-
-class _AchievementPlaceholder {
-  final String emoji;
-  final String title;
-  final String targetText;
-
-  const _AchievementPlaceholder({
-    required this.emoji,
-    required this.title,
-    required this.targetText,
-  });
 }
